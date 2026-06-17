@@ -1,34 +1,34 @@
-import TelegramBot from 'node-telegram-bot-api';
+import { Telegraf } from 'telegraf';
 import { config } from '../config';
 import { MarketSignal, MonitoredTransfer } from '../types';
 import { AnalysisResult } from '../analyzers/transaction-analyzer';
 import { Database } from '../database/db';
 
 export class TelegramReporter {
-  private bot: TelegramBot | null = null;
+  private bot: Telegraf | null = null;
   private chatId: string;
 
   constructor(private db: Database) {
     this.chatId = config.telegramChatId;
     if (config.telegramBotToken) {
-      this.bot = new TelegramBot(config.telegramBotToken, { polling: false });
+      this.bot = new Telegraf(config.telegramBotToken);
     }
   }
 
   private getDirectionEmoji(dir: string): string {
     switch (dir) {
-      case 'bullish': return '\u{1F7E2}'; // green
-      case 'bearish': return '\u{1F534}'; // red
-      default: return '\u{1F7E1}'; // yellow
+      case 'bullish': return '\u{1F7E2}';
+      case 'bearish': return '\u{1F534}';
+      default: return '\u{1F7E1}';
     }
   }
 
   private getSignificanceEmoji(sig: string): string {
     switch (sig) {
-      case 'critical': return '\u{1F534}'; // red
-      case 'high': return '\u{1F7E0}'; // orange
-      case 'medium': return '\u{1F7E1}'; // yellow
-      default: return '\u{26AA}'; // white
+      case 'critical': return '\u{1F534}';
+      case 'high': return '\u{1F7E0}';
+      case 'medium': return '\u{1F7E1}';
+      default: return '\u{26AA}';
     }
   }
 
@@ -143,9 +143,9 @@ export class TelegramReporter {
   private async send(message: string): Promise<void> {
     if (!this.bot || !this.chatId) return;
     try {
-      await this.bot.sendMessage(this.chatId, message, {
+      await this.bot.telegram.sendMessage(this.chatId, message, {
         parse_mode: 'Markdown',
-      } as any);
+      });
     } catch (err: any) {
       console.warn('[Telegram] Failed to send message:', err.message);
     }
