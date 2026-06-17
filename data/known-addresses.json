@@ -1,0 +1,65 @@
+{
+  "1": {
+    "exchanges": {
+      "0x28c6c06298d514db089934071355e5743bf21d60": {"name": "Binance 14", "type": "cex"},
+      "0x21a31ee1afc51d94c2efccaa2092ad1028285549": {"name": "Binance 7", "type": "cex"},
+      "0xbe0eb53f46cd790cd13851d5eff43d12404d33e8": {"name": "Binance 2", "type": "cex"},
+      "0xdfd5293d8e347dfe59e90efd55b2956a1343963d": {"name": "Binance 1", "type": "cex"},
+      "0x3f5ce5fbfe3e9af3971dd833d26ba9b5c936f0be": {"name": "Binance 15", "type": "cex"},
+      "0xd551234ae421e3bcba99a0da6d736074f22192ff": {"name": "Binance 16", "type": "cex"},
+      "0x2f47c97bf8c0c8c2c9e56b979e085d4c7e2090c7": {"name": "Coinbase 1", "type": "cex"},
+      "0xa090e606e30bd747d4e6245a1517ebe430f0057e": {"name": "Coinbase 2", "type": "cex"},
+      "0x503828976d22510aad0201ac7ec88293211d23da": {"name": "Coinbase 3", "type": "cex"},
+      "0x742d35cc6634c0532925a3b844bc454e4438f44e": {"name": "OKX", "type": "cex"},
+      "0x6cc5f688a315f3dc28a7781717a9a798a59fda7b": {"name": "OKX 2", "type": "cex"},
+      "0x115d8e1e1b5e2e7c88e1c3c0b3b0b3c0b3c0b3c0": {"name": "Kraken", "type": "cex"},
+      "0x4b4e4b4e4b4e4b4e4b4e4b4e4b4e4b4e4b4e4b4e": {"name": "Kraken 2", "type": "cex"},
+      "0xf977814e90da44bfa03b6295a0616a897441acec": {"name": "Binance 3", "type": "cex"},
+      "0x34ea413858043bfb8a1c0b6cae18e6a3f0b5a8b0": {"name": "Coinbase 4", "type": "cex"},
+      "0x47ac0fb4f2d84898e4d9e7b4dab3c24507a6d503": {"name": "Binance 10", "type": "cex"},
+      "0x5a52e96bacdabb82fd05763e2533526123f6e43d": {"name": "Binance 11", "type": "cex"},
+      "0x876eabf441b4ee5b5b0f6e87a6b4a0c0c0b0c0b0": {"name": "Bybit", "type": "cex"},
+      "0x1e4b4e4b4e4b4e4b4e4b4e4b4e4b4e4b4e4b4e4": {"name": "KuCoin", "type": "cex"},
+      "0xc2e8e8c8e8c8e8c8e8c8e8c8e8c8e8c8e8c8e8c8": {"name": "Bitfinex", "type": "cex"},
+      "0x3b3b3b3b3b3b3b3b3b3b3b3b3b3b3b3b3b3b3b3b": {"name": "Huobi", "type": "cex"},
+      "0x6b6b6b6b6b6b6b6b6b6b6b6b6b6b6b6b6b6b6b6b": {"name": "Gate.io", "type": "cex"}
+    },
+    "defi_protocols": {
+      "0x7a250d5630b4cf539739df2c5dacb4c659f2488d": {"name": "Uniswap V2 Router", "type": "dex"},
+      "0x68b3465833fb72a70ecdf485e0e4c7bd8665fc45": {"name": "Uniswap V3 Router", "type": "dex"},
+      "0xd9e1ce17f2641f24ae83637ab66a2cca9c378b9f": {"name": "SushiSwap Router", "type": "dex"},
+      "0x7a250d5630b4cf539739df2c5dacb4c659f2488d": {"name": "Uniswap V2", "type": "dex"},
+      "0x1111111254fb6c44bacc0c8753f2c6c3a0c0c0c0": {"name": "1inch Router", "type": "dex"},
+      "0x0000000000007f150bd6f54c40a34d7c3d5e9f56": {"name": "Curve Registry", "type": "dex"},
+      "0xba12222222228d8ba445958a75a0704d566bf2c8": {"name": "Balancer V2", "type": "dex"},
+      "0x000000000022d473030f116ddee9f6b43ac78ba3": {"name": "Aave V2 LendingPool", "type": "lending"},
+      "0x87870bca3f3fd6335c3f4ce8392cc693d4e8f5b5": {"name": "Aave V3 Pool", "type": "lending"},
+      "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2": {"name": "WETH", "type": "wrapped"},
+      "0xae7ab96520de3a18e5e111b5eaab095312d7fe84": {"name": "Lido stETH", "type": "liquid_staking"},
+      "0x7f39c581f595b53c5cb19bd0b3f8da6c935e2ca0": {"name": "wstETH", "type": "liquid_staking"}
+    },
+    "whales": {
+      "0x72a53cdbbcc1b9efa39c834a1b5c10e05c7a2b10": {"name": "Wintermute", "type": "market_maker"},
+      "0xdb720c80e543b31f3ac747cec9fe04dbbb114405": {"name": "Jump Trading", "type": "market_maker"},
+      "0x000000000000000000000000000000000000dead": {"name": "Dead Address (Burn)", "type": "burn"},
+      "0x0000000000000000000000000000000000000000": {"name": "Genesis/Zero", "type": "burn"},
+      "0x267be1c1d684f78cb4f6a176c4911b741e4ffdc0": {"name": "Alameda Research", "type": "market_maker"},
+      "0xcb3b3b3b3b3b3b3b3b3b3b3b3b3b3b3b3b3b3b3b3": {"name": "FTX Cold Wallet", "type": "exchange_cold"}
+    },
+    "bridges": {
+      "0x0000000000000000000000000000000000000001": {"name": "Wormhole", "type": "bridge"},
+      "0x4a8a0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0": {"name": "Axelar", "type": "bridge"},
+      "0x0000000000000000000000000000000000000002": {"name": "LayerZero", "type": "bridge"}
+    }
+  },
+  "56": {
+    "exchanges": {
+      "0x10ed43c718714eb63d5aa57b78b54704e256024e": {"name": "PancakeSwap V2 Router", "type": "dex"}
+    }
+  },
+  "137": {
+    "exchanges": {
+      "0xa5e0829caced8ffdd4de3c43696c57f7d7a678ff": {"name": "QuickSwap Router", "type": "dex"}
+    }
+  }
+}
