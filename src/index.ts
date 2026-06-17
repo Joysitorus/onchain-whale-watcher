@@ -8,6 +8,7 @@ import { SignalGenerator } from './signals/signal-generator';
 import { ConsoleReporter } from './reporters/console-reporter';
 import { TelegramReporter } from './reporters/telegram-reporter';
 import { Database } from './database/db';
+import { NotificationManager } from './notifications/notification-manager';
 import { MonitoredTransfer } from './types';
 
 async function main() {
@@ -23,6 +24,7 @@ async function main() {
   const analyzer = new TransactionAnalyzer(labelDb);
   const signalGen = new SignalGenerator();
   const consoleReporter = new ConsoleReporter();
+  const notifyManager = new NotificationManager();
 
   // Init database
   const db = new Database();
@@ -45,8 +47,6 @@ async function main() {
 
   console.log('[Init] Scraping Arkham Intelligence for entity labels...');
   const entities = await arkhamScraper.scrapeTopEntities();
-
-  // Save scraped entities to DB
   for (const entity of entities) {
     await db.upsertAddress(entity.address, 1, entity.name, entity.entityType, 'arkham');
   }
@@ -58,7 +58,6 @@ async function main() {
     let pollStartTime = Date.now();
 
     // Step 1: Follow-up on previously tracked whales
-    console.log(`[Poll] ${new Date().toLocaleTimeString()} - Checking tracked whales...`);
     const followUpTransfers = await whaleTracker.followUpTrackedWhales();
     allTransfers.push(...followUpTransfers);
 
@@ -115,14 +114,14 @@ async function main() {
     analyzer.addTransfers(allTransfers);
     const analysis = analyzer.analyze();
 
-    // Step 8: Generate signals (combine standard + whale signals)
+    // Step 8: Generate signals
     const signal = signalGen.generate(analysis, allTransfers);
     const whaleSignal = whaleTracker.generateWhaleSignal(allTransfers);
 
     // Step 9: Save signal to database
     await db.saveSignal(signal, analysis);
 
-    // Step 10: Report to console
+    // Step 10: Report to console (always show everything)
     consoleReporter.reportTransfers(allTransfers);
     if (newWhales.length > 0) {
       console.log(`\n[WhaleTracker] ${newWhales.length} new unknown whale(s) identified and being tracked`);
@@ -130,45 +129,63 @@ async function main() {
     consoleReporter.reportAnalysis(analysis);
     consoleReporter.reportSignal(signal);
 
-    // Step 11: Send Telegram notifications
+    // Step 11: Send Telegram notifications (filtered + throttled)
     if (telegramReporter) {
-      // New whale alerts (highest priority)
-      for (const tx of newWhales) {
+      // Only notify for genuinely new whales (not already notified)
+      const freshNewWhales = notifyManager.filterNewWhales(newWhales);
+      for (const tx of freshNewWhales) {
         await telegramReporter.sendNewWhaleAlert(tx);
       }
 
-      // Whale exchange movement alerts
-      for (const tx of exchangeMovements) {
-        await telegramReporter.sendAlert(tx);
+      // Mark new whale addresses as notified
+      for (const tx of freshNewWhales) {
+        const whaleAddr = tx.fromLabel.startsWith('Whale ') ? tx.from : tx.to;
+        if (whaleAddr) notifyManager.markWhaleNotified(whaleAddr);
       }
 
-      // Critical transfers
-      const criticalTransfers = allTransfers.filter(tx => tx.significance === 'critical');
-      for (const tx of criticalTransfers) {
+      // Only send critical alerts for NON-duplicate transfers
+      const uniqueCritical = notifyManager.filterNewTransfers(
+        allTransfers.filter(tx => tx.significance === 'critical')
+      );
+      for (const tx of uniqueCritical) {
         await telegramReporter.sendAlert(tx);
+        notifyManager.markTransferSent(tx);
       }
 
-      // Whale signal (if any)
-      if (whaleSignal) {
+      // Whale exchange movement alerts (deduplicated)
+      const uniqueExchangeMoves = notifyManager.filterNewTransfers(exchangeMovements);
+      for (const tx of uniqueExchangeMoves) {
+        await telegramReporter.sendAlert(tx);
+        notifyManager.markTransferSent(tx);
+      }
+
+      // Only send market signal if direction changed or confidence shifted significantly
+      if (notifyManager.shouldNotifySignal(signal)) {
+        await telegramReporter.sendSignal(signal, analysis);
+        notifyManager.updateLastSignal(signal);
+      }
+
+      // Whale signal (only if new whales detected and signal is meaningful)
+      if (whaleSignal && freshNewWhales.length > 0) {
         await telegramReporter.sendSignal(whaleSignal, analysis);
       }
 
-      // Standard market signal
-      await telegramReporter.sendSignal(signal, analysis);
+      // Periodic summary (only if there were meaningful events)
+      const hasNewActivity = freshNewWhales.length > 0 || uniqueCritical.length > 0;
+      if (hasNewActivity) {
+        const totalValue = allTransfers.reduce((sum, tx) => sum + tx.valueUsd, 0);
+        await telegramReporter.sendSummary(allTransfers.length, totalValue, signal);
+      }
 
-      // Summary
-      const totalValue = allTransfers.reduce((sum, tx) => sum + tx.valueUsd, 0);
-      await telegramReporter.sendSummary(allTransfers.length, totalValue, signal);
-
-      // Whale summary
-      if (newWhales.length > 0) {
-        const newWhaleVolume = newWhales.reduce((s, t) => s + t.valueUsd, 0);
-        await telegramReporter.sendWhaleSummary(newWhales.length, newWhaleVolume);
+      if (freshNewWhales.length > 0) {
+        const newWhaleVolume = freshNewWhales.reduce((s, t) => s + t.valueUsd, 0);
+        await telegramReporter.sendWhaleSummary(freshNewWhales.length, newWhaleVolume);
       }
     }
 
+    const stats = notifyManager.getStats();
     const pollDuration = Date.now() - pollStartTime;
-    console.log(`[Poll] Completed in ${(pollDuration / 1000).toFixed(1)}s`);
+    console.log(`[Poll] Completed in ${(pollDuration / 1000).toFixed(1)}s | Notified: ${stats.deduped} unique txs, ${stats.whalesTracked} whales tracked`);
   }
 
   // Initial poll

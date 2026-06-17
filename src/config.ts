@@ -33,7 +33,6 @@ export const config = {
   arkhamBaseUrl: process.env.ARKHAM_BASE_URL || 'https://intel.arkm.com',
   pollIntervalMs: parseInt(process.env.POLL_INTERVAL_MS || '60000', 10),
   minTxValueUsd: parseInt(process.env.MIN_TX_VALUE_USD || '100000', 10),
-  reportWebhookUrl: process.env.REPORT_WEBHOOK_URL || '',
   databaseUrl: process.env.DATABASE_URL || '',
   telegramBotToken: process.env.TELEGRAM_BOT_TOKEN || '',
   telegramChatId: process.env.TELEGRAM_CHAT_ID || '',
