@@ -18,13 +18,23 @@ const CHAIN_MAP: Record<number, Omit<ChainConfig, 'rpcUrl'>> = {
   43114: { chainId: 43114, name: 'Avalanche', nativeToken: 'AVAX', explorerUrl: 'https://snowtrace.io' },
 };
 
+const RPC_URL_ALIASES: Record<number, string[]> = {
+  1: ['ETH_RPC_URL', 'ETHEREUM_RPC_URL'],
+  56: ['BSC_RPC_URL'],
+  137: ['POLYGON_RPC_URL'],
+  10: ['OPTIMISM_RPC_URL'],
+  42161: ['ARBITRUM_RPC_URL'],
+  43114: ['AVALANCHE_RPC_URL'],
+};
+
 function getMonitoredChains(): ChainConfig[] {
   const chainIds = (process.env.MONITORED_CHAINS || '1').split(',').map(Number);
   return chainIds.map(id => {
     const base = CHAIN_MAP[id];
     if (!base) throw new Error(`Unknown chain ID: ${id}`);
-    const envKey = `${base.name.toUpperCase()}_RPC_URL`.replace(' ', '_');
-    return { ...base, rpcUrl: process.env[envKey] || '' };
+    const aliases = RPC_URL_ALIASES[id] || [`${base.name.toUpperCase()}_RPC_URL`];
+    const rpcUrl = aliases.map(k => process.env[k]).find(Boolean) || '';
+    return { ...base, rpcUrl };
   });
 }
 

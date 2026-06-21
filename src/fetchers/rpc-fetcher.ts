@@ -3,9 +3,11 @@ import { config } from '../config';
 import { ChainConfig } from '../config';
 import { LabelDatabase } from '../label-db';
 import { Transaction, MonitoredTransfer } from '../types';
+import { PriceFetcher } from './price-fetcher';
 
 export class RpcFetcher {
   private providers: Map<number, ethers.JsonRpcProvider> = new Map();
+  private priceFetcher = new PriceFetcher();
 
   constructor(private labelDb: LabelDatabase) {
     for (const chain of config.chains) {
@@ -34,12 +36,13 @@ export class RpcFetcher {
 
         for (const tx of block.transactions) {
           const txData = tx as unknown as ethers.TransactionResponse;
-          const valueEth = parseFloat(ethers.formatEther(txData.value));
+          const txValue = txData.value ?? 0n;
+          const valueEth = parseFloat(ethers.formatEther(txValue));
 
           // Filter for significant transactions only
           if (valueEth < 1) continue;
 
-          let valueUsd = valueEth * (await this.getEthUsdPrice(chain.chainId));
+          let valueUsd = valueEth * (await this.priceFetcher.getUsdPrice(chain.chainId));
 
           transactions.push({
             hash: txData.hash,
@@ -49,7 +52,7 @@ export class RpcFetcher {
             timestamp: block.timestamp * 1000,
             from: txData.from.toLowerCase(),
             to: (txData.to || '').toLowerCase(),
-            value: txData.value.toString(),
+            value: txValue.toString(),
             valueUsd,
             gasPrice: txData.gasPrice?.toString() || '0',
             gasUsed: '0',
@@ -62,12 +65,6 @@ export class RpcFetcher {
       console.warn(`[RPC] Error fetching blocks for ${chain.name}: ${err.message}`);
       return [];
     }
-  }
-
-  private async getEthUsdPrice(chainId: number): Promise<number> {
-    if (chainId === 56) return 600;
-    if (chainId === 137) return 0.7;
-    return 3500;
   }
 
   async getPendingTransactions(chain: ChainConfig): Promise<MonitoredTransfer[]> {
@@ -90,7 +87,7 @@ export class RpcFetcher {
         const valueEth = parseFloat(ethers.formatEther(valueWei));
         if (valueEth < 10) continue;
 
-        const valueUsd = valueEth * (await this.getEthUsdPrice(chain.chainId));
+        const valueUsd = valueEth * (await this.priceFetcher.getUsdPrice(chain.chainId));
 
         transfers.push({
           hash: tx.hash || '',
@@ -134,8 +131,10 @@ export class RpcFetcher {
           if (txData.from?.toLowerCase() !== addrLower &&
               txData.to?.toLowerCase() !== addrLower) continue;
 
-          const valueEth = parseFloat(ethers.formatEther(txData.value));
-          const valueUsd = valueEth * (await this.getEthUsdPrice(chain.chainId));
+          const histTxValue = txData.value ?? 0n;
+          const valueEth = parseFloat(ethers.formatEther(histTxValue));
+          if (valueEth <= 0) continue;
+          const valueUsd = valueEth * (await this.priceFetcher.getUsdPrice(chain.chainId));
 
           transactions.push({
             hash: txData.hash,
@@ -145,7 +144,7 @@ export class RpcFetcher {
             timestamp: block.timestamp * 1000,
             from: txData.from.toLowerCase(),
             to: (txData.to || '').toLowerCase(),
-            value: txData.value.toString(),
+            value: histTxValue.toString(),
             valueUsd,
             gasPrice: txData.gasPrice?.toString() || '0',
             gasUsed: '0',

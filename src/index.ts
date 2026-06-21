@@ -93,7 +93,10 @@ async function main() {
       }
 
       const pending = await rpcFetcher.getPendingTransactions(chain);
-      allTransfers.push(...pending);
+      for (const ptx of pending) {
+        if (ptx.valueUsd < config.minTxValueUsd) continue;
+        allTransfers.push(ptx);
+      }
     }
 
     if (allTransfers.length === 0) {

@@ -3,26 +3,34 @@ import { config } from '../config';
 import { MarketSignal, MonitoredTransfer, Transaction } from '../types';
 
 export class Database {
-  private pool: Pool;
+  private pool: Pool | null = null;
+  private connected: boolean = false;
 
   constructor() {
-    this.pool = new Pool({
-      connectionString: config.databaseUrl,
-      ssl: { rejectUnauthorized: false },
-      max: 5,
-    });
+    if (config.databaseUrl) {
+      this.pool = new Pool({
+        connectionString: config.databaseUrl,
+        ssl: { rejectUnauthorized: false },
+        max: 5,
+      });
 
-    this.pool.on('error', (err) => {
-      console.error('[DB] Pool error:', err.message);
-    });
+      this.pool.on('error', (err) => {
+        console.error('[DB] Pool error:', err.message);
+      });
+    }
   }
 
   async connect(): Promise<void> {
+    if (!this.pool) {
+      console.warn('[DB] No DATABASE_URL configured, running without database...');
+      return;
+    }
     try {
       const client = await this.pool.connect();
       console.log('[DB] Connected to PostgreSQL');
       client.release();
       await this.runMigrations();
+      this.connected = true;
     } catch (err: any) {
       console.warn('[DB] Connection failed:', err.message);
       console.warn('[DB] Running without database...');
@@ -30,6 +38,7 @@ export class Database {
   }
 
   private async runMigrations(): Promise<void> {
+    if (!this.pool) return;
     const client = await this.pool.connect();
     try {
       await client.query('BEGIN');
@@ -123,6 +132,7 @@ export class Database {
   }
 
   async saveTransfer(transfer: MonitoredTransfer): Promise<void> {
+    if (!this.connected || !this.pool) return;
     try {
       await this.pool.query(
         `INSERT INTO monitored_transfers
@@ -157,6 +167,7 @@ export class Database {
   }
 
   async saveSignal(signal: MarketSignal, analysis: any): Promise<void> {
+    if (!this.connected || !this.pool) return;
     try {
       await this.pool.query(
         `INSERT INTO market_signals
@@ -187,6 +198,7 @@ export class Database {
     type: string,
     source: string = 'manual'
   ): Promise<void> {
+    if (!this.connected || !this.pool) return;
     try {
       await this.pool.query(
         `INSERT INTO known_addresses (address, chain_id, name, type, source)
@@ -201,6 +213,7 @@ export class Database {
   }
 
   async getRecentTransfers(limit: number = 20): Promise<MonitoredTransfer[]> {
+    if (!this.connected || !this.pool) return [];
     try {
       const result = await this.pool.query(
         `SELECT * FROM monitored_transfers
@@ -214,6 +227,7 @@ export class Database {
   }
 
   async getRecentSignals(limit: number = 10): Promise<any[]> {
+    if (!this.connected || !this.pool) return [];
     try {
       const result = await this.pool.query(
         `SELECT * FROM market_signals ORDER BY timestamp DESC LIMIT $1`,
@@ -226,6 +240,7 @@ export class Database {
   }
 
   async getTotalTrackedValue(): Promise<number> {
+    if (!this.connected || !this.pool) return 0;
     try {
       const result = await this.pool.query(
         `SELECT COALESCE(SUM(value_usd), 0) as total FROM monitored_transfers`
@@ -246,6 +261,7 @@ export class Database {
       timestamp?: number;
     }
   ): Promise<void> {
+    if (!this.connected || !this.pool) return;
     try {
       const existing = await this.pool.query(
         `SELECT * FROM whale_tracking WHERE address = $1 AND chain_id = $2`,
@@ -287,6 +303,7 @@ export class Database {
   }
 
   async getTrackedWhales(limit: number = 20): Promise<any[]> {
+    if (!this.connected || !this.pool) return [];
     try {
       const result = await this.pool.query(
         `SELECT * FROM whale_tracking WHERE status = 'active'
@@ -300,6 +317,7 @@ export class Database {
   }
 
   async getWhaleHistory(address: string, chainId: number): Promise<MonitoredTransfer[]> {
+    if (!this.connected || !this.pool) return [];
     try {
       const result = await this.pool.query(
         `SELECT * FROM monitored_transfers
@@ -331,7 +349,9 @@ export class Database {
   }
 
   async disconnect(): Promise<void> {
-    await this.pool.end();
-    console.log('[DB] Disconnected');
+    if (this.pool) {
+      await this.pool.end();
+      console.log('[DB] Disconnected');
+    }
   }
 }
