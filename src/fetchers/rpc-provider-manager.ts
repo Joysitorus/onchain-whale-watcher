@@ -329,18 +329,25 @@ export class RpcProviderManager {
   }
 
   private getDefaultPublicWsUrls(chainId: number): WsProviderConfig[] {
-    // Most public RPCs don't support WebSocket, so only add known ones
+    // Public WebSocket endpoints (only known working ones)
     const publicWs: Record<number, WsProviderConfig[]> = {
       1: [
         { url: 'wss://eth.llamarpc.com', name: 'LlamaRPC-WS-ETH', weight: 200 },
         { url: 'wss://rpc.ankr.com/eth/ws', name: 'Ankr-WS-ETH', weight: 201 },
       ],
       56: [
-        { url: 'wss://bsc-ws.nariox.org:443', name: 'Nariox-WS-BSC', weight: 200 },
+        // BSC public WebSocket endpoints (Nariox is dead)
+        { url: 'wss://bsc-rpc.publicnode.com', name: 'PublicNode-WS-BSC', weight: 200 },
       ],
-      137: [],
-      10: [],
-      42161: [],
+      137: [
+        { url: 'wss://polygon-bor-rpc.publicnode.com', name: 'PublicNode-WS-Polygon', weight: 200 },
+      ],
+      10: [
+        { url: 'wss://optimism-rpc.publicnode.com', name: 'PublicNode-WS-OP', weight: 200 },
+      ],
+      42161: [
+        { url: 'wss://arbitrum-one-rpc.publicnode.com', name: 'PublicNode-WS-Arb', weight: 200 },
+      ],
       43114: [],
     };
     return publicWs[chainId] || [];
@@ -463,19 +470,33 @@ export class RpcProviderManager {
 
       const cacheKey = `${chainId}:${providerConfig.url}`;
       
-      // Return cached provider if available and healthy
+      // Return cached provider if available
       if (this.providers.has(cacheKey)) {
         return this.providers.get(cacheKey)!;
       }
 
-      // Create new provider
-      const provider = new ethers.JsonRpcProvider(providerConfig.url);
+      // Create new provider with static network preset
+      // This skips the eth_chainId detection call that causes "failed to detect network" spam
+      const networkPreset = this.getNetworkPreset(chainId);
+      const provider = new ethers.JsonRpcProvider(providerConfig.url, networkPreset);
       this.providers.set(cacheKey, provider);
       
       return provider;
     }
 
     return null;
+  }
+
+  private getNetworkPreset(chainId: number): ethers.Network {
+    const networks: Record<number, ethers.Network> = {
+      1: new ethers.Network('mainnet', 1),
+      56: new ethers.Network('bsc-mainnet', 56),
+      137: new ethers.Network('polygon-mainnet', 137),
+      10: new ethers.Network('optimism-mainnet', 10),
+      42161: new ethers.Network('arbitrum-mainnet', 42161),
+      43114: new ethers.Network('avalanche-mainnet', 43114),
+    };
+    return networks[chainId] || new ethers.Network('unknown', chainId);
   }
 
   private getNextHealthyProvider(pool: ChainProviderPool, now: number): ProviderConfig | null {

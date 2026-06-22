@@ -173,6 +173,32 @@ export class HybridConnectionManager extends EventEmitter {
 
     try {
       const wsProvider = new ethers.WebSocketProvider(wsUrl);
+
+      // IMPORTANT: Attach error handler IMMEDIATELY to prevent uncaught errors
+      // The WS connection can fail before we finish setup
+      let consecutiveErrors = 0;
+      const MAX_CONSECUTIVE_ERRORS = 10;
+
+      wsProvider.on('error', (err) => {
+        console.error(`[WS] Error on ${chain.name}: ${err.message?.substring(0, 100)}`);
+
+        // Report failure to provider manager
+        if (this.useProviderManager) {
+          const isRateLimit = rpcProviderManager.isWsRateLimitError(err);
+          const currentUrl = this.currentWsUrls.get(chain.chainId);
+          if (currentUrl) {
+            rpcProviderManager.reportWsFailure(chain.chainId, currentUrl, isRateLimit);
+          }
+        }
+
+        consecutiveErrors++;
+        if (consecutiveErrors >= MAX_CONSECUTIVE_ERRORS) {
+          console.error(`[WS] Too many consecutive errors on ${chain.name} (${consecutiveErrors}), disconnecting`);
+          this.handleWebSocketDisconnect(chain);
+        }
+      });
+
+      // Now safe to continue setup
       this.wsProviders.set(chain.chainId, wsProvider);
       this.currentWsUrls.set(chain.chainId, wsUrl);
       this.wsReconnectAttempts.set(chain.chainId, 0);
@@ -191,6 +217,7 @@ export class HybridConnectionManager extends EventEmitter {
           health.lastBlockNumber = blockNumber;
           health.lastUpdate = Date.now();
           health.errorCount = 0;
+          consecutiveErrors = 0; // Reset on successful block
 
           // Fetch full block data
           const block = await wsProvider.getBlock(blockNumber);
@@ -205,40 +232,33 @@ export class HybridConnectionManager extends EventEmitter {
 
             // Emit transaction events for value transfers
             for (const txHash of block.transactions) {
-              const tx = await wsProvider.getTransaction(txHash);
-              if (tx && tx.value > 0n) {
-                this.emit('transaction', {
-                  chainId: chain.chainId,
-                  chainName: chain.name,
-                  hash: tx.hash,
-                  from: tx.from.toLowerCase(),
-                  to: (tx.to || '').toLowerCase(),
-                  value: tx.value,
-                  blockNumber,
-                  timestamp: block.timestamp * 1000,
-                });
+              try {
+                const tx = await wsProvider.getTransaction(txHash);
+                if (tx && tx.value > 0n) {
+                  this.emit('transaction', {
+                    chainId: chain.chainId,
+                    chainName: chain.name,
+                    hash: tx.hash,
+                    from: tx.from.toLowerCase(),
+                    to: (tx.to || '').toLowerCase(),
+                    value: tx.value,
+                    blockNumber,
+                    timestamp: block.timestamp * 1000,
+                  });
+                }
+              } catch {
+                // Ignore individual tx errors (node might not have the tx yet)
               }
             }
           }
         } catch (err: any) {
-          console.warn(`[WS] Error processing block on ${chain.name}:`, err.message);
-        }
-      });
-
-      // Handle WebSocket errors (post-connection)
-      wsProvider.on('error', (err) => {
-        console.error(`[WS] Error on ${chain.name}:`, err.message);
-
-        // Report failure to provider manager
-        if (this.useProviderManager) {
-          const isRateLimit = rpcProviderManager.isWsRateLimitError(err);
-          const currentUrl = this.currentWsUrls.get(chain.chainId);
-          if (currentUrl) {
-            rpcProviderManager.reportWsFailure(chain.chainId, currentUrl, isRateLimit);
+          consecutiveErrors++;
+          console.warn(`[WS] Error processing block on ${chain.name}: ${err.message?.substring(0, 100)}`);
+          if (consecutiveErrors >= MAX_CONSECUTIVE_ERRORS) {
+            console.error(`[WS] Too many block errors on ${chain.name}, disconnecting`);
+            this.handleWebSocketDisconnect(chain);
           }
         }
-
-        this.handleWebSocketDisconnect(chain);
       });
 
       const providerName = this.useProviderManager
@@ -247,7 +267,7 @@ export class HybridConnectionManager extends EventEmitter {
       console.log(`[WS] Connected to ${chain.name} via ${providerName}`);
 
     } catch (err: any) {
-      console.warn(`[WS] Failed to connect to ${chain.name}: ${err.message}`);
+      console.warn(`[WS] Failed to connect to ${chain.name}: ${err.message?.substring(0, 100)}`);
 
       // Report failure to provider manager
       if (this.useProviderManager) {
