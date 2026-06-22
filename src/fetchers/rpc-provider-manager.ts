@@ -22,6 +22,7 @@ interface ChainProviderPool {
   providers: ProviderConfig[];
   health: Map<string, ProviderHealth>;
   currentIndex: number;
+  lastResetDate: string; // Track last reset date (YYYY-MM-DD)
 }
 
 export class RpcProviderManager {
@@ -53,6 +54,7 @@ export class RpcProviderManager {
         providers,
         health: new Map(),
         currentIndex: 0,
+        lastResetDate: this.getCurrentDate(),
       };
 
       // Initialize health tracking for each provider
@@ -70,6 +72,46 @@ export class RpcProviderManager {
       }
 
       this.pools.set(chainId, pool);
+    }
+  }
+
+  private getCurrentDate(): string {
+    // Returns YYYY-MM-DD in local timezone
+    const now = new Date();
+    return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+  }
+
+  private checkDailyReset(pool: ChainProviderPool): void {
+    const today = this.getCurrentDate();
+    
+    if (pool.lastResetDate !== today) {
+      console.log(`[RPC Provider] Daily reset: ${pool.lastResetDate} → ${today} (chain ${pool.chainId})`);
+      
+      // Reset index to first provider (Infura Key #1)
+      pool.currentIndex = 0;
+      pool.lastResetDate = today;
+      
+      // Clear all cooldowns and reset health
+      for (const [url, health] of pool.health) {
+        health.cooldownUntil = 0;
+        health.failCount = 0;
+        health.successCount = 0;
+      }
+      
+      // Clear cached providers to force new connections
+      this.clearCacheForChain(pool.chainId);
+    }
+  }
+
+  private clearCacheForChain(chainId: number): void {
+    const keysToDelete: string[] = [];
+    for (const key of this.providers.keys()) {
+      if (key.startsWith(`${chainId}:`)) {
+        keysToDelete.push(key);
+      }
+    }
+    for (const key of keysToDelete) {
+      this.providers.delete(key);
     }
   }
 
@@ -199,6 +241,9 @@ export class RpcProviderManager {
   async getProvider(chainId: number): Promise<ethers.JsonRpcProvider | null> {
     const pool = this.pools.get(chainId);
     if (!pool || pool.providers.length === 0) return null;
+
+    // Check for daily reset (new day = credits refreshed)
+    this.checkDailyReset(pool);
 
     const now = Date.now();
     
