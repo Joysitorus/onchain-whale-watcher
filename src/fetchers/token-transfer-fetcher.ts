@@ -66,7 +66,7 @@ export class TokenTransferFetcher {
     const provider = this.providers.get(chain.chainId);
     if (!provider) return [];
 
-    const tokenInfo = this.tokenRegistry.getToken(tokenAddress, chain.chainId);
+    let tokenInfo = this.tokenRegistry.getToken(tokenAddress, chain.chainId);
     if (!tokenInfo) return [];
 
     const purchases: WhaleTokenPurchase[] = [];
@@ -97,6 +97,14 @@ export class TokenTransferFetcher {
             watchedAddresses.includes(toAddr);
 
           if (!isWatched) continue;
+
+          // Auto-discover unknown tokens
+          if (!tokenInfo.coingeckoId) {
+            const discovered = await this.tokenRegistry.fetchTokenInfo(tokenAddress, chain.chainId);
+            if (discovered) {
+              tokenInfo = discovered;
+            }
+          }
 
           const tokenPriceUsd = await this.getTokenPriceUsd(tokenInfo.coingeckoId);
           const amountUsd = amount * tokenPriceUsd;

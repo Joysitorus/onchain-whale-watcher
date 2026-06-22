@@ -154,7 +154,8 @@ export class TelegramReporter {
     const msg =
       `${sigEmoji} *${alertLabel}*\n\n` +
       `\uD83D\uDCB5 *Nilai:* $${(transfer.valueUsd / 1_000_000).toFixed(2)}M\n` +
-      `\uD83C\uDF10 *Jaringan:* ${transfer.chainName}\n\n` +
+      `\uD83C\uDF10 *Jaringan:* ${transfer.chainName}\n` +
+      `\uD83C\uDFF7\uFE0F *Token:* ${transfer.token}\n\n` +
       `\uD83D\uDD04 *Alur Transaksi:*\n` +
       `   Dari: ${transfer.fromLabel}\n` +
       `   Jenis: ${fromTypeLabel}\n` +
@@ -190,6 +191,7 @@ export class TelegramReporter {
       `\uD83D\uDCB5 *Detail Transaksi:*\n` +
       `   Nilai: *$${(transfer.valueUsd / 1_000_000).toFixed(2)}M*\n` +
       `   Jaringan: ${transfer.chainName}\n` +
+      `   Token: ${transfer.token}\n` +
       `   Arah: ${direction} (${action})\n\n` +
       `\uD83D\uDD04 *Counterparty:*\n` +
       `   Nama: ${counterparty}\n` +

@@ -100,6 +100,7 @@ export class RpcFetcher {
           toLabel: this.labelDb.label(to, chain.chainId),
           toType: this.labelDb.labelType(to, chain.chainId),
           valueUsd,
+          token: chain.nativeToken,
           timestamp: Date.now(),
           significance: 'high',
         });

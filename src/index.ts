@@ -150,6 +150,7 @@ async function main() {
           toLabel: labelDb.label(tx.to, tx.chainId),
           toType: labelDb.labelType(tx.to, tx.chainId),
           valueUsd: tx.valueUsd,
+          token: chain.nativeToken,
           timestamp: tx.timestamp,
           significance: tx.valueUsd >= 10_000_000 ? 'critical' : tx.valueUsd >= 1_000_000 ? 'high' : 'medium',
         });
@@ -313,6 +314,7 @@ async function main() {
           toLabel: activity.whaleLabel,
           toType: 'whale',
           valueUsd: activity.netPositionUsd,
+          token: activity.tokenSymbol,
           timestamp: Date.now(),
           significance: 'high',
         })) {
@@ -328,6 +330,7 @@ async function main() {
             toLabel: activity.whaleLabel,
             toType: 'whale',
             valueUsd: activity.netPositionUsd,
+            token: activity.tokenSymbol,
             timestamp: Date.now(),
             significance: 'high',
           });

@@ -10,6 +10,7 @@ export interface Transaction {
   valueUsd: number;
   gasPrice: string;
   gasUsed: string;
+  token?: string;
   tokenTransfers?: TokenTransfer[];
   methodSignature?: string;
 }
@@ -35,7 +36,7 @@ export interface MonitoredTransfer {
   toLabel: string;
   toType: string;
   valueUsd: number;
-  token?: string;
+  token: string;
   timestamp: number;
   significance: 'low' | 'medium' | 'high' | 'critical';
 }

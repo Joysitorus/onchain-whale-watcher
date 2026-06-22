@@ -128,6 +128,7 @@ export class ArkhamScraper {
             toLabel,
             toType: this.labelDb.labelType(to, 1),
             valueUsd,
+            token: 'ETH',
             timestamp: Date.now(),
             significance: this.calcSignificance(valueUsd),
           });

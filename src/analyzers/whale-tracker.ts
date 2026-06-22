@@ -57,6 +57,7 @@ export class WhaleTracker {
           toLabel: this.labelDb.label(tx.to, tx.chainId),
           fromType: this.labelDb.labelType(tx.from, tx.chainId),
           toType: this.labelDb.labelType(tx.to, tx.chainId),
+          token: tx.token || this.getNativeToken(tx.chainId),
         };
 
         const isSender = side === tx.from;
@@ -109,6 +110,7 @@ export class WhaleTracker {
           toLabel: this.labelDb.label(tx.to, tx.chainId),
           toType: this.labelDb.labelType(tx.to, tx.chainId),
           valueUsd: tx.valueUsd,
+          token: tx.token || this.getNativeToken(tx.chainId),
           timestamp: tx.timestamp,
           significance: tx.valueUsd >= 10_000_000 ? 'critical' : tx.valueUsd >= 1_000_000 ? 'high' : 'medium',
         };
@@ -243,5 +245,17 @@ export class WhaleTracker {
   clear(): void {
     this.newlyIdentified = [];
     this.followUpResults = [];
+  }
+
+  private getNativeToken(chainId: number): string {
+    const tokens: Record<number, string> = {
+      1: 'ETH',
+      56: 'BNB',
+      137: 'MATIC',
+      10: 'ETH',
+      42161: 'ETH',
+      43114: 'AVAX',
+    };
+    return tokens[chainId] || 'ETH';
   }
 }

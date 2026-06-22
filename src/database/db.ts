@@ -519,6 +519,7 @@ export class Database {
       toLabel: row.to_label,
       toType: row.to_type,
       valueUsd: parseFloat(row.value_usd),
+      token: row.token || 'ETH',
       significance: row.significance,
       timestamp: row.timestamp,
     };
