@@ -1,5 +1,6 @@
 import { EventEmitter } from 'events';
 import { ethers } from 'ethers';
+import WebSocket from 'ws';
 import { config, ChainConfig } from '../config';
 
 export interface TransactionData {
@@ -102,13 +103,61 @@ export class HybridConnectionManager extends EventEmitter {
     return keys[chainId] || `CHAIN_${chainId}_WS_URL`;
   }
 
+  /**
+   * Test WebSocket connection with raw ws library before creating ethers provider.
+   * This catches HTTP 429 (rate limit) and other handshake errors early.
+   */
+  private testWebSocketConnection(wsUrl: string, timeoutMs: number = 10000): Promise<{ ok: boolean; error?: string }> {
+    return new Promise((resolve) => {
+      const ws = new WebSocket(wsUrl);
+      const timer = setTimeout(() => {
+        ws.terminate();
+        resolve({ ok: false, error: 'Connection timeout' });
+      }, timeoutMs);
+
+      ws.on('open', () => {
+        clearTimeout(timer);
+        ws.close();
+        resolve({ ok: true });
+      });
+
+      ws.on('error', (err: Error) => {
+        clearTimeout(timer);
+        // Extract HTTP status code from error message if present
+        const msg = err.message || String(err);
+        resolve({ ok: false, error: msg });
+      });
+
+      ws.on('unexpected-response', (_req, res) => {
+        clearTimeout(timer);
+        const statusCode = res?.statusCode || 0;
+        ws.close();
+        resolve({ ok: false, error: `Unexpected server response: ${statusCode}` });
+      });
+    });
+  }
+
   private async connectWebSocket(chain: ChainConfig, wsUrl: string): Promise<void> {
+    const health = this.health.get(chain.chainId)!;
+
+    // Pre-flight check: test WS connection before creating ethers provider
+    const test = await this.testWebSocketConnection(wsUrl);
+    if (!test.ok) {
+      console.warn(`[WS] Pre-flight check failed for ${chain.name}: ${test.error}`);
+      health.mode = 'polling';
+
+      // If 429, schedule retry with backoff
+      if (test.error?.includes('429')) {
+        this.scheduleReconnect(chain);
+      }
+      return;
+    }
+
     try {
       const wsProvider = new ethers.WebSocketProvider(wsUrl);
       this.wsProviders.set(chain.chainId, wsProvider);
       this.wsReconnectAttempts.set(chain.chainId, 0);
 
-      const health = this.health.get(chain.chainId)!;
       health.mode = 'websocket';
       health.connected = true;
 
@@ -152,7 +201,7 @@ export class HybridConnectionManager extends EventEmitter {
         }
       });
 
-      // Handle WebSocket errors
+      // Handle WebSocket errors (post-connection)
       wsProvider.on('error', (err) => {
         console.error(`[WS] Error on ${chain.name}:`, err.message);
         this.handleWebSocketDisconnect(chain);
@@ -162,37 +211,46 @@ export class HybridConnectionManager extends EventEmitter {
 
     } catch (err: any) {
       console.warn(`[WS] Failed to connect to ${chain.name}:`, err.message);
-      this.health.get(chain.chainId)!.mode = 'polling';
+      health.mode = 'polling';
+      this.scheduleReconnect(chain);
     }
   }
 
-  private handleWebSocketDisconnect(chain: ChainConfig): void {
-    const health = this.health.get(chain.chainId)!;
+  private scheduleReconnect(chain: ChainConfig): void {
     const attempts = this.wsReconnectAttempts.get(chain.chainId) || 0;
-
-    health.mode = 'polling';
-    health.connected = false;
-    health.errorCount++;
-    health.reconnectAttempts = attempts + 1;
-
-    this.wsProviders.delete(chain.chainId);
 
     if (attempts >= this.maxWsReconnectAttempts) {
       console.error(`[WS] Max reconnect attempts reached for ${chain.name}, staying in polling mode`);
       return;
     }
 
-    // Exponential backoff: 5s, 10s, 20s, 40s, 80s
-    const delay = 5000 * Math.pow(2, attempts);
-    console.log(`[WS] Reconnecting to ${chain.name} in ${delay}ms (attempt ${attempts + 1})`);
+    // Exponential backoff with jitter: ~5s, ~10s, ~20s, ~40s, ~80s
+    const baseDelay = 5000 * Math.pow(2, attempts);
+    const jitter = Math.floor(Math.random() * 1000);
+    const delay = baseDelay + jitter;
+
+    console.log(`[WS] Will retry ${chain.name} in ${Math.round(delay / 1000)}s (attempt ${attempts + 1}/${this.maxWsReconnectAttempts})`);
+
+    this.wsReconnectAttempts.set(chain.chainId, attempts + 1);
 
     setTimeout(async () => {
       const wsUrl = this.getWsUrl(chain);
       if (wsUrl) {
-        this.wsReconnectAttempts.set(chain.chainId, attempts + 1);
         await this.connectWebSocket(chain, wsUrl);
       }
     }, delay);
+  }
+
+  private handleWebSocketDisconnect(chain: ChainConfig): void {
+    const health = this.health.get(chain.chainId)!;
+
+    health.mode = 'polling';
+    health.connected = false;
+    health.errorCount++;
+
+    this.wsProviders.delete(chain.chainId);
+
+    this.scheduleReconnect(chain);
   }
 
   private startPolling(chain: ChainConfig): void {

@@ -408,6 +408,22 @@ async function main() {
   });
 }
 
+// Global error handlers - prevent crashes from unhandled errors
+process.on('uncaughtException', (err) => {
+  console.error('[FATAL] Uncaught Exception:', err.message);
+  // Don't exit immediately - let the app continue if possible
+  // Only exit for truly fatal errors
+  if (err.message?.includes('ECONNRESET') || err.message?.includes('EPIPE')) {
+    console.error('[FATAL] Network error, exiting...');
+    process.exit(1);
+  }
+});
+
+process.on('unhandledRejection', (reason: any) => {
+  console.error('[WARN] Unhandled Rejection:', reason?.message || reason);
+  // Don't crash - log and continue
+});
+
 main().catch(err => {
   console.error('Fatal error:', err);
   process.exit(1);
