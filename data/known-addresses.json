@@ -24,6 +24,33 @@
       "0x3b3b3b3b3b3b3b3b3b3b3b3b3b3b3b3b3b3b3b3b": {"name": "Huobi", "type": "cex"},
       "0x6b6b6b6b6b6b6b6b6b6b6b6b6b6b6b6b6b6b6b6b": {"name": "Gate.io", "type": "cex"}
     },
+    "cold_wallets": {
+      "0x21a31ee1afc51d94c2efccaa2092ad1028285549": {"name": "Binance Cold 1", "type": "cold_wallet"},
+      "0x28c6c06298d514db089934071355e5743bf21d60": {"name": "Binance Cold 2", "type": "cold_wallet"},
+      "0x47ac0fb4f2d84898e4d9e7b4dab3c24507a6d503": {"name": "Binance Cold 3", "type": "cold_wallet"},
+      "0x5a52e96bacdabb82fd05763e2533526123f6e43d": {"name": "Binance Cold 4", "type": "cold_wallet"},
+      "0xbe0eb53f46cd790cd13851d5eff43d12404d33e8": {"name": "Binance Cold 5", "type": "cold_wallet"},
+      "0xdfd5293d8e347dfe59e90efd55b2956a1343963d": {"name": "Binance Cold 6", "type": "cold_wallet"},
+      "0x503828976d22510aad0201ac7ec88293211d23da": {"name": "Coinbase Cold 1", "type": "cold_wallet"},
+      "0xa090e606e30bd747d4e6245a1517ebe430f0057e": {"name": "Coinbase Cold 2", "type": "cold_wallet"},
+      "0x742d35cc6634c0532925a3b844bc454e4438f44e": {"name": "OKX Cold 1", "type": "cold_wallet"},
+      "0x6cc5f688a315f3dc28a7781717a9a798a59fda7b": {"name": "OKX Cold 2", "type": "cold_wallet"},
+      "0xf977814e90da44bfa03b6295a0616a897441acec": {"name": "Binance Cold 7", "type": "cold_wallet"},
+      "0xcb3b3b3b3b3b3b3b3b3b3b3b3b3b3b3b3b3b3b3b3": {"name": "FTX Cold Wallet", "type": "cold_wallet"}
+    },
+    "hot_wallets": {
+      "0x3f5ce5fbfe3e9af3971dd833d26ba9b5c936f0be": {"name": "Binance Hot 1", "type": "hot_wallet"},
+      "0xd551234ae421e3bcba99a0da6d736074f22192ff": {"name": "Binance Hot 2", "type": "hot_wallet"},
+      "0x2f47c97bf8c0c8c2c9e56b979e085d4c7e2090c7": {"name": "Coinbase Hot 1", "type": "hot_wallet"},
+      "0x34ea413858043bfb8a1c0b6cae18e6a3f0b5a8b0": {"name": "Coinbase Hot 2", "type": "hot_wallet"},
+      "0x115d8e1e1b5e2e7c88e1c3c0b3b0b3c0b3c0b3c0": {"name": "Kraken Hot 1", "type": "hot_wallet"},
+      "0x4b4e4b4e4b4e4b4e4b4e4b4e4b4e4b4e4b4e4b4e": {"name": "Kraken Hot 2", "type": "hot_wallet"},
+      "0x876eabf441b4ee5b5b0f6e87a6b4a0c0c0b0c0b0": {"name": "Bybit Hot 1", "type": "hot_wallet"},
+      "0x1e4b4e4b4e4b4e4b4e4b4e4b4e4b4e4b4e4b4e4": {"name": "KuCoin Hot 1", "type": "hot_wallet"},
+      "0xc2e8e8c8e8c8e8c8e8c8e8c8e8c8e8c8e8c8e8c8": {"name": "Bitfinex Hot 1", "type": "hot_wallet"},
+      "0x3b3b3b3b3b3b3b3b3b3b3b3b3b3b3b3b3b3b3b3b": {"name": "Huobi Hot 1", "type": "hot_wallet"},
+      "0x6b6b6b6b6b6b6b6b6b6b6b6b6b6b6b6b6b6b6b6b": {"name": "Gate.io Hot 1", "type": "hot_wallet"}
+    },
     "defi_protocols": {
       "0x7a250d5630b4cf539739df2c5dacb4c659f2488d": {"name": "Uniswap V2 Router", "type": "dex"},
       "0x68b3465833fb72a70ecdf485e0e4c7bd8665fc45": {"name": "Uniswap V3 Router", "type": "dex"},
@@ -43,8 +70,7 @@
       "0xdb720c80e543b31f3ac747cec9fe04dbbb114405": {"name": "Jump Trading", "type": "market_maker"},
       "0x000000000000000000000000000000000000dead": {"name": "Dead Address (Burn)", "type": "burn"},
       "0x0000000000000000000000000000000000000000": {"name": "Genesis/Zero", "type": "burn"},
-      "0x267be1c1d684f78cb4f6a176c4911b741e4ffdc0": {"name": "Alameda Research", "type": "market_maker"},
-      "0xcb3b3b3b3b3b3b3b3b3b3b3b3b3b3b3b3b3b3b3b3": {"name": "FTX Cold Wallet", "type": "exchange_cold"}
+      "0x267be1c1d684f78cb4f6a176c4911b741e4ffdc0": {"name": "Alameda Research", "type": "market_maker"}
     },
     "bridges": {
       "0x0000000000000000000000000000000000000001": {"name": "Wormhole", "type": "bridge"},
@@ -55,11 +81,33 @@
   "56": {
     "exchanges": {
       "0x10ed43c718714eb63d5aa57b78b54704e256024e": {"name": "PancakeSwap V2 Router", "type": "dex"}
+    },
+    "cold_wallets": {
+      "0x8894e0a0c962cb723c1ef8a1b0baf7b4baf69d82": {"name": "BSC Binance Cold", "type": "cold_wallet"},
+      "0x56eddb7aa87536c09ccc2793473599fd21a8b17f": {"name": "BSC Binance Hot", "type": "hot_wallet"}
     }
   },
   "137": {
     "exchanges": {
       "0xa5e0829caced8ffdd4de3c43696c57f7d7a678ff": {"name": "QuickSwap Router", "type": "dex"}
+    },
+    "cold_wallets": {
+      "0x0d500b1d8e8ef31e21c99d1db9a6444d3adf1270": {"name": "Polygon WMATIC", "type": "wrapped"}
+    }
+  },
+  "42161": {
+    "cold_wallets": {
+      "0x79109d170b651e5f6e450d6e0a848d100781b572": {"name": "Arbitrum Bridge", "type": "bridge"}
+    }
+  },
+  "43114": {
+    "cold_wallets": {
+      "0x8b8de94843da585ab15db63f4137130a73c919e9": {"name": "Avalanche C-Chain Bridge", "type": "bridge"}
+    }
+  },
+  "10": {
+    "cold_wallets": {
+      "0x4200000000000000000000000000000000000010": {"name": "Optimism L1StandardBridge", "type": "bridge"}
     }
   }
 }

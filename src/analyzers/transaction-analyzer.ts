@@ -11,6 +11,21 @@ export interface AnalysisResult {
   significantTransfers: MonitoredTransfer[];
   patterns: string[];
   timestamp: number;
+  transferDirections: TransferDirection[];
+}
+
+export interface TransferDirection {
+  hash: string;
+  chainName: string;
+  from: string;
+  fromLabel: string;
+  fromType: string;
+  to: string;
+  toLabel: string;
+  toType: string;
+  valueUsd: number;
+  direction: 'exchange_to_cold' | 'cold_to_exchange' | 'exchange_to_hot' | 'hot_to_exchange' | 'cold_to_cold' | 'hot_to_hot' | 'whale_to_exchange' | 'exchange_to_whale' | 'unknown';
+  timestamp: number;
 }
 
 export class TransactionAnalyzer {
@@ -33,10 +48,29 @@ export class TransactionAnalyzer {
     let whaleAccumulation = 0;
     let whaleDistribution = 0;
     const significant: MonitoredTransfer[] = [];
+    const transferDirections: TransferDirection[] = [];
 
     for (const tx of this.recentTransfers) {
       const fromType = tx.fromType;
       const toType = tx.toType;
+
+      // Detect transfer direction
+      const direction = this.detectTransferDirection(fromType, toType);
+      if (direction !== 'unknown') {
+        transferDirections.push({
+          hash: tx.hash,
+          chainName: tx.chainName,
+          from: tx.from,
+          fromLabel: tx.fromLabel,
+          fromType,
+          to: tx.to,
+          toLabel: tx.toLabel,
+          toType,
+          valueUsd: tx.valueUsd,
+          direction,
+          timestamp: tx.timestamp,
+        });
+      }
 
       // Exchange inflows: from non-exchange to exchange
       if (toType === 'cex' && fromType !== 'cex') {
@@ -83,6 +117,24 @@ export class TransactionAnalyzer {
       patterns.push('Massive exchange outflow - large withdrawal to cold storage');
     }
 
+    // Analyze transfer directions for patterns
+    const coldToExchange = transferDirections.filter(d => d.direction === 'cold_to_exchange');
+    const exchangeToCold = transferDirections.filter(d => d.direction === 'exchange_to_cold');
+
+    if (coldToExchange.length > 0) {
+      const totalColdToExchange = coldToExchange.reduce((sum, d) => sum + d.valueUsd, 0);
+      if (totalColdToExchange > 5_000_000) {
+        patterns.push(`Cold wallet to exchange: $${(totalColdToExchange / 1_000_000).toFixed(1)}M - potential selling`);
+      }
+    }
+
+    if (exchangeToCold.length > 0) {
+      const totalExchangeToCold = exchangeToCold.reduce((sum, d) => sum + d.valueUsd, 0);
+      if (totalExchangeToCold > 5_000_000) {
+        patterns.push(`Exchange to cold wallet: $${(totalExchangeToCold / 1_000_000).toFixed(1)}M - accumulation`);
+      }
+    }
+
     return {
       exchangeInflow,
       exchangeOutflow,
@@ -92,7 +144,52 @@ export class TransactionAnalyzer {
       significantTransfers: significant.sort((a, b) => b.valueUsd - a.valueUsd),
       patterns,
       timestamp: Date.now(),
+      transferDirections: transferDirections.sort((a, b) => b.valueUsd - a.valueUsd),
     };
+  }
+
+  private detectTransferDirection(fromType: string, toType: string): TransferDirection['direction'] {
+    // Exchange to Cold Wallet
+    if ((fromType === 'cex' || fromType === 'hot_wallet') && toType === 'cold_wallet') {
+      return 'exchange_to_cold';
+    }
+
+    // Cold Wallet to Exchange
+    if (fromType === 'cold_wallet' && (toType === 'cex' || toType === 'hot_wallet')) {
+      return 'cold_to_exchange';
+    }
+
+    // Exchange to Hot Wallet
+    if (fromType === 'cex' && toType === 'hot_wallet') {
+      return 'exchange_to_hot';
+    }
+
+    // Hot Wallet to Exchange
+    if (fromType === 'hot_wallet' && toType === 'cex') {
+      return 'hot_to_exchange';
+    }
+
+    // Cold to Cold
+    if (fromType === 'cold_wallet' && toType === 'cold_wallet') {
+      return 'cold_to_cold';
+    }
+
+    // Hot to Hot
+    if (fromType === 'hot_wallet' && toType === 'hot_wallet') {
+      return 'hot_to_hot';
+    }
+
+    // Whale to Exchange
+    if ((fromType === 'whale' || fromType === 'market_maker') && (toType === 'cex' || toType === 'hot_wallet')) {
+      return 'whale_to_exchange';
+    }
+
+    // Exchange to Whale
+    if ((fromType === 'cex' || fromType === 'hot_wallet') && (toType === 'whale' || toType === 'market_maker')) {
+      return 'exchange_to_whale';
+    }
+
+    return 'unknown';
   }
 
   private validateTransfer(tx: MonitoredTransfer): boolean {

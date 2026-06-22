@@ -1,5 +1,5 @@
 import { MarketSignal, MonitoredTransfer } from '../types';
-import { AnalysisResult } from '../analyzers/transaction-analyzer';
+import { AnalysisResult, TransferDirection } from '../analyzers/transaction-analyzer';
 
 interface TokenPurchaseSummary {
   tokenSymbol: string;
@@ -69,6 +69,17 @@ export class ConsoleReporter {
         console.log(`  \u26A0 ${p}`);
       }
     }
+
+    // Transfer Directions
+    if (analysis.transferDirections.length > 0) {
+      console.log('\n  Transfer Directions:');
+      for (const td of analysis.transferDirections.slice(0, 10)) {
+        const dirLabel = this.getDirectionLabel(td.direction);
+        const dirEmoji = this.getDirectionEmoji(td.direction);
+        console.log(`  ${dirEmoji} ${dirLabel}: $${(td.valueUsd / 1_000_000).toFixed(2)}M`);
+        console.log(`     ${td.fromLabel} (${td.fromType}) \u2192 ${td.toLabel} (${td.toType})`);
+      }
+    }
     console.log('');
   }
 
@@ -79,9 +90,39 @@ export class ConsoleReporter {
     for (const tx of transfers.sort((a, b) => b.valueUsd - a.valueUsd).slice(0, 10)) {
       const significanceIcon = tx.significance === 'critical' ? '\uD83D\uDD34' : tx.significance === 'high' ? '\uD83D\uDFE0' : '\uD83D\uDFE1';
       console.log(`  ${significanceIcon} [${tx.chainName}] $${(tx.valueUsd / 1_000_000).toFixed(2)}M`);
-      console.log(`     ${tx.fromLabel} \u2192 ${tx.toLabel}`);
+      console.log(`     ${tx.fromLabel} (${tx.fromType}) \u2192 ${tx.toLabel} (${tx.toType})`);
       if (tx.hash) console.log(`     tx: ${tx.hash.slice(0, 10)}...${tx.hash.slice(-8)}`);
     }
+  }
+
+  private getDirectionLabel(direction: TransferDirection['direction']): string {
+    const labels: Record<TransferDirection['direction'], string> = {
+      'exchange_to_cold': 'Exchange \u2192 Cold Wallet',
+      'cold_to_exchange': 'Cold Wallet \u2192 Exchange',
+      'exchange_to_hot': 'Exchange \u2192 Hot Wallet',
+      'hot_to_exchange': 'Hot Wallet \u2192 Exchange',
+      'cold_to_cold': 'Cold \u2192 Cold',
+      'hot_to_hot': 'Hot \u2192 Hot',
+      'whale_to_exchange': 'Whale \u2192 Exchange',
+      'exchange_to_whale': 'Exchange \u2192 Whale',
+      'unknown': 'Unknown',
+    };
+    return labels[direction];
+  }
+
+  private getDirectionEmoji(direction: TransferDirection['direction']): string {
+    const emojis: Record<TransferDirection['direction'], string> = {
+      'exchange_to_cold': '\uD83D\uDCC8',
+      'cold_to_exchange': '\uD83D\uDCC9',
+      'exchange_to_hot': '\uD83D\uDD25',
+      'hot_to_exchange': '\uD83D\uDCA8',
+      'cold_to_cold': '\u2744\uFE0F',
+      'hot_to_hot': '\uD83D\uDD25\uD83D\uDD25',
+      'whale_to_exchange': '\uD83D\uDC0B\u2192\uD83C\uDFE6',
+      'exchange_to_whale': '\uD83C\uDFE6\u2192\uD83D\uDC0B',
+      'unknown': '\u2753',
+    };
+    return emojis[direction];
   }
 
   reportTokenPurchases(

@@ -1,7 +1,7 @@
 import { Telegraf } from 'telegraf';
 import { config } from '../config';
 import { MarketSignal, MonitoredTransfer } from '../types';
-import { AnalysisResult } from '../analyzers/transaction-analyzer';
+import { AnalysisResult, TransferDirection } from '../analyzers/transaction-analyzer';
 import { Database } from '../database/db';
 
 interface WhaleTokenActivity {
@@ -30,7 +30,7 @@ export class TelegramReporter {
     }
   }
 
-  private getDirectionEmoji(dir: string): string {
+  private getSignalDirectionEmoji(dir: string): string {
     switch (dir) {
       case 'bullish': return '\uD83D\uDFE2';
       case 'bearish': return '\uD83D\uDD34';
@@ -61,7 +61,7 @@ export class TelegramReporter {
   async sendSignal(signal: MarketSignal, analysis?: AnalysisResult): Promise<void> {
     if (!this.bot) return;
 
-    const emoji = this.getDirectionEmoji(signal.direction);
+    const emoji = this.getSignalDirectionEmoji(signal.direction);
     const dirText = signal.direction === 'bullish' ? 'BULLISH' : signal.direction === 'bearish' ? 'BEARISH' : 'NEUTRAL';
 
     let msg =
@@ -110,7 +110,18 @@ export class TelegramReporter {
       for (const tx of signal.relatedTransfers.slice(0, 3)) {
         const sigEmoji = this.getSignificanceEmoji(tx.significance);
         msg += `${sigEmoji} [${tx.chainName}] $${(tx.valueUsd / 1_000_000).toFixed(2)}M\n`;
-        msg += `\uD83D\uDC64 ${tx.fromLabel} \u2192 ${tx.toLabel}\n`;
+        msg += `\uD83D\uDC64 ${tx.fromLabel} (${tx.fromType}) \u2192 ${tx.toLabel} (${tx.toType})\n`;
+      }
+    }
+
+    // Transfer Directions
+    if (analysis && analysis.transferDirections.length > 0) {
+      msg += `\n\n\uD83D\uDCC8 *Transfer Directions:*\n`;
+      for (const td of analysis.transferDirections.slice(0, 5)) {
+        const dirLabel = this.getDirectionLabel(td.direction);
+        const dirEmoji = this.getDirectionEmoji(td.direction);
+        msg += `${dirEmoji} ${dirLabel}: $${(td.valueUsd / 1_000_000).toFixed(2)}M\n`;
+        msg += `   ${td.fromLabel} \u2192 ${td.toLabel}\n`;
       }
     }
 
@@ -222,5 +233,35 @@ export class TelegramReporter {
     } catch (err: any) {
       console.warn('[Telegram] Failed to send message:', err.message);
     }
+  }
+
+  private getDirectionLabel(direction: TransferDirection['direction']): string {
+    const labels: Record<TransferDirection['direction'], string> = {
+      'exchange_to_cold': 'Exchange \u2192 Cold Wallet',
+      'cold_to_exchange': 'Cold Wallet \u2192 Exchange',
+      'exchange_to_hot': 'Exchange \u2192 Hot Wallet',
+      'hot_to_exchange': 'Hot Wallet \u2192 Exchange',
+      'cold_to_cold': 'Cold \u2192 Cold',
+      'hot_to_hot': 'Hot \u2192 Hot',
+      'whale_to_exchange': 'Whale \u2192 Exchange',
+      'exchange_to_whale': 'Exchange \u2192 Whale',
+      'unknown': 'Unknown',
+    };
+    return labels[direction];
+  }
+
+  private getDirectionEmoji(direction: TransferDirection['direction']): string {
+    const emojis: Record<TransferDirection['direction'], string> = {
+      'exchange_to_cold': '\uD83D\uDCC8',
+      'cold_to_exchange': '\uD83D\uDCC9',
+      'exchange_to_hot': '\uD83D\uDD25',
+      'hot_to_exchange': '\uD83D\uDCA8',
+      'cold_to_cold': '\u2744\uFE0F',
+      'hot_to_hot': '\uD83D\uDD25\uD83D\uDD25',
+      'whale_to_exchange': '\uD83D\uDC0B\u2192\uD83C\uDFE6',
+      'exchange_to_whale': '\uD83C\uDFE6\u2192\uD83D\uDC0B',
+      'unknown': '\u2753',
+    };
+    return emojis[direction];
   }
 }

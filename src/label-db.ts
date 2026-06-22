@@ -3,7 +3,7 @@ import path from 'path';
 
 export interface AddressLabel {
   name: string;
-  type: 'cex' | 'dex' | 'market_maker' | 'whale' | 'bridge' | 'lending' | 'liquid_staking' | 'wrapped' | 'burn' | 'unknown';
+  type: 'cex' | 'dex' | 'market_maker' | 'whale' | 'bridge' | 'lending' | 'liquid_staking' | 'wrapped' | 'burn' | 'cold_wallet' | 'hot_wallet' | 'unknown';
 }
 
 interface RawLabelData {
