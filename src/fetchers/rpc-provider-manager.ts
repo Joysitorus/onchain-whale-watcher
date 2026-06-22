@@ -25,8 +25,22 @@ interface ChainProviderPool {
   lastResetDate: string; // Track last reset date (YYYY-MM-DD)
 }
 
+interface WsProviderPool {
+  chainId: number;
+  urls: WsProviderConfig[];
+  health: Map<string, ProviderHealth>;
+  currentIndex: number;
+}
+
+interface WsProviderConfig {
+  url: string;
+  name: string;
+  weight?: number;
+}
+
 export class RpcProviderManager {
   private pools: Map<number, ChainProviderPool> = new Map();
+  private wsPools: Map<number, WsProviderPool> = new Map();
   private providers: Map<string, ethers.JsonRpcProvider> = new Map();
   
   // Rate limit cooldown: 60 seconds
@@ -46,32 +60,58 @@ export class RpcProviderManager {
     const chainIds = (process.env.MONITORED_CHAINS || '1').split(',').map(Number);
     
     for (const chainId of chainIds) {
+      // Initialize HTTP RPC pool
       const providers = this.buildProviderList(chainId);
-      if (providers.length === 0) continue;
+      if (providers.length > 0) {
+        const pool: ChainProviderPool = {
+          chainId,
+          providers,
+          health: new Map(),
+          currentIndex: 0,
+          lastResetDate: this.getCurrentDate(),
+        };
 
-      const pool: ChainProviderPool = {
-        chainId,
-        providers,
-        health: new Map(),
-        currentIndex: 0,
-        lastResetDate: this.getCurrentDate(),
-      };
+        for (const provider of providers) {
+          pool.health.set(provider.url, {
+            url: provider.url,
+            name: provider.name,
+            successCount: 0,
+            failCount: 0,
+            lastFailTime: 0,
+            lastSuccessTime: 0,
+            cooldownUntil: 0,
+            avgResponseTime: 1000,
+          });
+        }
 
-      // Initialize health tracking for each provider
-      for (const provider of providers) {
-        pool.health.set(provider.url, {
-          url: provider.url,
-          name: provider.name,
-          successCount: 0,
-          failCount: 0,
-          lastFailTime: 0,
-          lastSuccessTime: 0,
-          cooldownUntil: 0,
-          avgResponseTime: 1000,
-        });
+        this.pools.set(chainId, pool);
       }
 
-      this.pools.set(chainId, pool);
+      // Initialize WebSocket pool
+      const wsUrls = this.buildWsUrlList(chainId);
+      if (wsUrls.length > 0) {
+        const wsPool: WsProviderPool = {
+          chainId,
+          urls: wsUrls,
+          health: new Map(),
+          currentIndex: 0,
+        };
+
+        for (const ws of wsUrls) {
+          wsPool.health.set(ws.url, {
+            url: ws.url,
+            name: ws.name,
+            successCount: 0,
+            failCount: 0,
+            lastFailTime: 0,
+            lastSuccessTime: 0,
+            cooldownUntil: 0,
+            avgResponseTime: 1000,
+          });
+        }
+
+        this.wsPools.set(chainId, wsPool);
+      }
     }
   }
 
@@ -226,6 +266,175 @@ export class RpcProviderManager {
     return publicRpcs[chainId] || [];
   }
 
+  // ==================== WebSocket URL Rotation ====================
+
+  private buildWsUrlList(chainId: number): WsProviderConfig[] {
+    const urls: WsProviderConfig[] = [];
+
+    // Check for custom WS URLs from env vars first (highest priority)
+    const envWsUrl = this.getWsUrlFromEnv(chainId);
+    if (envWsUrl) {
+      urls.push({ url: envWsUrl, name: 'Env-WS', weight: 0 });
+      return urls; // If custom WS URL is set, use only that
+    }
+
+    // Build WS URLs from Infura keys
+    const infuraKeys = this.getInfuraKeys();
+    const infuraNetwork = this.getInfuraWsNetwork(chainId);
+
+    if (infuraNetwork) {
+      for (let i = 0; i < infuraKeys.length; i++) {
+        const key = infuraKeys[i];
+        urls.push({
+          url: `wss://${infuraNetwork}.infura.io/ws/v3/${key}`,
+          name: `Infura-WS-${i + 1}`,
+          weight: i,
+        });
+      }
+    }
+
+    // Add fallback public WebSocket endpoints
+    const fallbacks = this.getDefaultPublicWsUrls(chainId);
+    urls.push(...fallbacks);
+
+    return urls;
+  }
+
+  private getWsUrlFromEnv(chainId: number): string | null {
+    const envKeys: Record<number, string[]> = {
+      1: ['ETH_WS_URL'],
+      56: ['BSC_WS_URL'],
+      137: ['POLYGON_WS_URL'],
+      10: ['OPTIMISM_WS_URL'],
+      42161: ['ARBITRUM_WS_URL'],
+      43114: ['AVALANCHE_WS_URL'],
+    };
+    const keys = envKeys[chainId] || [];
+    for (const key of keys) {
+      if (process.env[key]) return process.env[key]!;
+    }
+    return null;
+  }
+
+  private getInfuraWsNetwork(chainId: number): string | null {
+    const networkMap: Record<number, string> = {
+      1: 'mainnet',
+      56: 'bsc-mainnet',
+      137: 'polygon-mainnet',
+      10: 'optimism-mainnet',
+      42161: 'arbitrum-mainnet',
+      43114: 'avalanche-mainnet',
+    };
+    return networkMap[chainId] || null;
+  }
+
+  private getDefaultPublicWsUrls(chainId: number): WsProviderConfig[] {
+    // Most public RPCs don't support WebSocket, so only add known ones
+    const publicWs: Record<number, WsProviderConfig[]> = {
+      1: [
+        { url: 'wss://eth.llamarpc.com', name: 'LlamaRPC-WS-ETH', weight: 200 },
+        { url: 'wss://rpc.ankr.com/eth/ws', name: 'Ankr-WS-ETH', weight: 201 },
+      ],
+      56: [
+        { url: 'wss://bsc-ws.nariox.org:443', name: 'Nariox-WS-BSC', weight: 200 },
+      ],
+      137: [],
+      10: [],
+      42161: [],
+      43114: [],
+    };
+    return publicWs[chainId] || [];
+  }
+
+  /**
+   * Get the next available WebSocket URL with rotation and cooldown.
+   * Returns null if all providers are in cooldown.
+   */
+  getWsUrl(chainId: number): string | null {
+    const pool = this.wsPools.get(chainId);
+    if (!pool || pool.urls.length === 0) return null;
+
+    const now = Date.now();
+
+    for (let attempts = 0; attempts < pool.urls.length; attempts++) {
+      const idx = (pool.currentIndex + attempts) % pool.urls.length;
+      const config = pool.urls[idx];
+      const health = pool.health.get(config.url);
+
+      if (!health) continue;
+
+      // Skip if in cooldown
+      if (health.cooldownUntil > now) {
+        continue;
+      }
+
+      // Skip if too many failures
+      if (health.failCount >= RpcProviderManager.MAX_FAILURES_BEFORE_COOLDOWN) {
+        health.cooldownUntil = now + RpcProviderManager.FAILURE_COOLDOWN_MS;
+        health.failCount = 0;
+        continue;
+      }
+
+      // Found a healthy provider - advance index for next call
+      pool.currentIndex = (idx + 1) % pool.urls.length;
+      return config.url;
+    }
+
+    return null; // All providers in cooldown
+  }
+
+  /**
+   * Get the name of a WS provider by its URL.
+   */
+  getWsProviderName(chainId: number, wsUrl: string): string {
+    const pool = this.wsPools.get(chainId);
+    if (!pool) return 'Unknown';
+    const config = pool.urls.find(u => u.url === wsUrl);
+    return config?.name || 'Unknown';
+  }
+
+  reportWsSuccess(chainId: number, wsUrl: string, responseTimeMs: number = 0): void {
+    const pool = this.wsPools.get(chainId);
+    if (!pool) return;
+
+    const health = pool.health.get(wsUrl);
+    if (!health) return;
+
+    health.successCount++;
+    health.lastSuccessTime = Date.now();
+    health.failCount = Math.max(0, health.failCount - 1);
+    health.avgResponseTime = health.avgResponseTime * 0.7 + responseTimeMs * 0.3;
+  }
+
+  reportWsFailure(chainId: number, wsUrl: string, isRateLimit: boolean = false): void {
+    const pool = this.wsPools.get(chainId);
+    if (!pool) return;
+
+    const health = pool.health.get(wsUrl);
+    if (!health) return;
+
+    health.failCount++;
+    health.lastFailTime = Date.now();
+
+    if (isRateLimit) {
+      health.cooldownUntil = Date.now() + RpcProviderManager.RATE_LIMIT_COOLDOWN_MS;
+      console.warn(`[WS Provider] Rate limited on ${health.name} (chain ${chainId}), cooldown ${RpcProviderManager.RATE_LIMIT_COOLDOWN_MS / 1000}s`);
+    } else if (health.failCount >= RpcProviderManager.MAX_FAILURES_BEFORE_COOLDOWN) {
+      health.cooldownUntil = Date.now() + RpcProviderManager.FAILURE_COOLDOWN_MS;
+      console.warn(`[WS Provider] ${health.name} (chain ${chainId}) failed ${health.failCount} times, cooldown ${RpcProviderManager.FAILURE_COOLDOWN_MS / 1000}s`);
+    }
+  }
+
+  isWsRateLimitError(error: any): boolean {
+    const message = error?.message?.toLowerCase() || '';
+    return (
+      message.includes('429') ||
+      message.includes('rate limit') ||
+      message.includes('too many requests') ||
+      message.includes('unexpected server response: 429')
+    );
+  }
+
   private getChainName(chainId: number): string {
     const names: Record<number, string> = {
       1: 'ETH',
@@ -356,10 +565,26 @@ export class RpcProviderManager {
       inCooldown: boolean;
       avgResponseTime: number;
     }>;
+    wsProviders?: Array<{
+      name: string;
+      url: string;
+      successCount: number;
+      failCount: number;
+      inCooldown: boolean;
+      avgResponseTime: number;
+    }>;
   }> {
     const status: Array<{
       chainId: number;
       providers: Array<{
+        name: string;
+        url: string;
+        successCount: number;
+        failCount: number;
+        inCooldown: boolean;
+        avgResponseTime: number;
+      }>;
+      wsProviders?: Array<{
         name: string;
         url: string;
         successCount: number;
@@ -384,7 +609,25 @@ export class RpcProviderManager {
         };
       });
 
-      status.push({ chainId, providers });
+      const entry: any = { chainId, providers };
+
+      // Add WS provider status if available
+      const wsPool = this.wsPools.get(chainId);
+      if (wsPool) {
+        entry.wsProviders = wsPool.urls.map(config => {
+          const health = wsPool.health.get(config.url)!;
+          return {
+            name: health.name,
+            url: this.maskUrl(health.url),
+            successCount: health.successCount,
+            failCount: health.failCount,
+            inCooldown: health.cooldownUntil > now,
+            avgResponseTime: Math.round(health.avgResponseTime),
+          };
+        });
+      }
+
+      status.push(entry);
     }
 
     return status;

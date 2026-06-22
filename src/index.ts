@@ -17,6 +17,7 @@ import { CacheService } from './cache/cache-service';
 import { HybridConnectionManager } from './fetchers/hybrid-connection';
 import { QueueService } from './queue/queue-service';
 import { metrics } from './metrics/metrics-service';
+import { rpcProviderManager } from './fetchers/rpc-provider-manager';
 
 async function main() {
   console.log('=== On-Chain Activity Agent ===');
@@ -377,6 +378,19 @@ async function main() {
         ? `${Math.round((Date.now() - health.lastUpdate) / 1000)}s ago`
         : 'never';
       console.log(`  ${chain?.name}: ${health.mode} | Errors: ${health.errorCount} | Last: ${lastUpdate}`);
+    }
+
+    // Log WS provider rotation status if enabled
+    if (config.rpcProviderRotation && config.infuraKeys.length > 1) {
+      const providerStatus = rpcProviderManager.getStatus();
+      for (const status of providerStatus) {
+        if (status.wsProviders && status.wsProviders.length > 0) {
+          const chain = config.chains.find(c => c.chainId === status.chainId);
+          const activeWs = status.wsProviders.find(p => !p.inCooldown);
+          const cooldownCount = status.wsProviders.filter(p => p.inCooldown).length;
+          console.log(`  ${chain?.name} WS: ${status.wsProviders.length} providers | Active: ${activeWs?.name || 'none'} | In cooldown: ${cooldownCount}`);
+        }
+      }
     }
   }, 5 * 60 * 1000); // Every 5 minutes
 

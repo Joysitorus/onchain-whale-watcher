@@ -2,6 +2,7 @@ import { EventEmitter } from 'events';
 import { ethers } from 'ethers';
 import WebSocket from 'ws';
 import { config, ChainConfig } from '../config';
+import { rpcProviderManager } from './rpc-provider-manager';
 
 export interface TransactionData {
   hash: string;
@@ -28,21 +29,27 @@ export interface ChainHealth {
 export class HybridConnectionManager extends EventEmitter {
   private providers: Map<number, ethers.JsonRpcProvider> = new Map();
   private wsProviders: Map<number, ethers.WebSocketProvider> = new Map();
+  private currentWsUrls: Map<number, string> = new Map(); // Track current WS URL per chain
   private health: Map<number, ChainHealth> = new Map();
   private pollIntervals: Map<number, NodeJS.Timeout> = new Map();
   private pollIntervalMs: number;
   private wsReconnectAttempts: Map<number, number> = new Map();
-  private maxWsReconnectAttempts = 5;
+  private maxWsReconnectAttempts = 10; // Increased: with rotation, more attempts across providers
   private mode: ConnectionMode;
+  private useProviderManager: boolean;
 
   constructor() {
     super();
     this.pollIntervalMs = config.pollIntervalMs;
     this.mode = config.enableWebSocket ? 'hybrid' : 'polling';
+    this.useProviderManager = config.rpcProviderRotation && config.infuraKeys.length > 1;
   }
 
   async start(): Promise<void> {
     console.log(`[Hybrid] Starting in ${this.mode} mode`);
+    if (this.useProviderManager) {
+      console.log(`[Hybrid] WebSocket rotation enabled with ${config.infuraKeys.length} Infura keys`);
+    }
 
     for (const chain of config.chains) {
       if (!chain.rpcUrl) {
@@ -67,7 +74,7 @@ export class HybridConnectionManager extends EventEmitter {
 
       // Try WebSocket if enabled
       if (config.enableWebSocket) {
-        const wsUrl = this.getWsUrl(chain);
+        const wsUrl = this.getNextWsUrl(chain.chainId);
         if (wsUrl) {
           await this.connectWebSocket(chain, wsUrl);
         }
@@ -78,21 +85,21 @@ export class HybridConnectionManager extends EventEmitter {
     }
   }
 
-  private getWsUrl(chain: ChainConfig): string | null {
-    const envKey = this.getWsEnvKey(chain.chainId);
-    const wsUrl = process.env[envKey];
-    if (wsUrl) return wsUrl;
-
-    // Fallback: Convert HTTP RPC to WebSocket
-    if (chain.rpcUrl) {
-      return chain.rpcUrl.replace('https://', 'wss://').replace('http://', 'ws://');
+  /**
+   * Get the next available WebSocket URL from the provider manager.
+   * Falls back to env var conversion if provider manager is not available.
+   */
+  private getNextWsUrl(chainId: number): string | null {
+    if (this.useProviderManager) {
+      return rpcProviderManager.getWsUrl(chainId);
     }
 
-    return null;
-  }
+    // Fallback: use env var or convert HTTP to WS
+    const chain = config.chains.find(c => c.chainId === chainId);
+    if (!chain) return null;
 
-  private getWsEnvKey(chainId: number): string {
-    const keys: Record<number, string> = {
+    // Check env var first
+    const envKeys: Record<number, string> = {
       1: 'ETH_WS_URL',
       56: 'BSC_WS_URL',
       137: 'POLYGON_WS_URL',
@@ -100,7 +107,15 @@ export class HybridConnectionManager extends EventEmitter {
       42161: 'ARBITRUM_WS_URL',
       43114: 'AVALANCHE_WS_URL',
     };
-    return keys[chainId] || `CHAIN_${chainId}_WS_URL`;
+    const envKey = envKeys[chainId];
+    if (envKey && process.env[envKey]) return process.env[envKey]!;
+
+    // Convert HTTP to WS
+    if (chain.rpcUrl) {
+      return chain.rpcUrl.replace('https://', 'wss://').replace('http://', 'ws://');
+    }
+
+    return null;
   }
 
   /**
@@ -143,20 +158,30 @@ export class HybridConnectionManager extends EventEmitter {
     // Pre-flight check: test WS connection before creating ethers provider
     const test = await this.testWebSocketConnection(wsUrl);
     if (!test.ok) {
-      console.warn(`[WS] Pre-flight check failed for ${chain.name}: ${test.error}`);
+      console.warn(`[WS] Pre-flight check failed for ${chain.name} (${wsUrl.substring(0, 40)}...): ${test.error}`);
       health.mode = 'polling';
 
-      // If 429, schedule retry with backoff
-      if (test.error?.includes('429')) {
-        this.scheduleReconnect(chain);
+      // Report failure to provider manager
+      if (this.useProviderManager) {
+        const isRateLimit = rpcProviderManager.isWsRateLimitError({ message: test.error || '' });
+        rpcProviderManager.reportWsFailure(chain.chainId, wsUrl, isRateLimit);
       }
+
+      // Schedule retry with next provider
+      this.scheduleReconnect(chain);
       return;
     }
 
     try {
       const wsProvider = new ethers.WebSocketProvider(wsUrl);
       this.wsProviders.set(chain.chainId, wsProvider);
+      this.currentWsUrls.set(chain.chainId, wsUrl);
       this.wsReconnectAttempts.set(chain.chainId, 0);
+
+      // Report success to provider manager
+      if (this.useProviderManager) {
+        rpcProviderManager.reportWsSuccess(chain.chainId, wsUrl);
+      }
 
       health.mode = 'websocket';
       health.connected = true;
@@ -204,13 +229,33 @@ export class HybridConnectionManager extends EventEmitter {
       // Handle WebSocket errors (post-connection)
       wsProvider.on('error', (err) => {
         console.error(`[WS] Error on ${chain.name}:`, err.message);
+
+        // Report failure to provider manager
+        if (this.useProviderManager) {
+          const isRateLimit = rpcProviderManager.isWsRateLimitError(err);
+          const currentUrl = this.currentWsUrls.get(chain.chainId);
+          if (currentUrl) {
+            rpcProviderManager.reportWsFailure(chain.chainId, currentUrl, isRateLimit);
+          }
+        }
+
         this.handleWebSocketDisconnect(chain);
       });
 
-      console.log(`[WS] Connected to ${chain.name}`);
+      const providerName = this.useProviderManager
+        ? rpcProviderManager.getWsProviderName(chain.chainId, wsUrl)
+        : 'Direct';
+      console.log(`[WS] Connected to ${chain.name} via ${providerName}`);
 
     } catch (err: any) {
-      console.warn(`[WS] Failed to connect to ${chain.name}:`, err.message);
+      console.warn(`[WS] Failed to connect to ${chain.name}: ${err.message}`);
+
+      // Report failure to provider manager
+      if (this.useProviderManager) {
+        const isRateLimit = rpcProviderManager.isWsRateLimitError(err);
+        rpcProviderManager.reportWsFailure(chain.chainId, wsUrl, isRateLimit);
+      }
+
       health.mode = 'polling';
       this.scheduleReconnect(chain);
     }
@@ -224,19 +269,22 @@ export class HybridConnectionManager extends EventEmitter {
       return;
     }
 
-    // Exponential backoff with jitter: ~5s, ~10s, ~20s, ~40s, ~80s
-    const baseDelay = 5000 * Math.pow(2, attempts);
+    // Exponential backoff with jitter: ~5s, ~10s, ~20s, ~40s, ~80s (capped)
+    const baseDelay = Math.min(5000 * Math.pow(2, attempts), 80000);
     const jitter = Math.floor(Math.random() * 1000);
     const delay = baseDelay + jitter;
 
-    console.log(`[WS] Will retry ${chain.name} in ${Math.round(delay / 1000)}s (attempt ${attempts + 1}/${this.maxWsReconnectAttempts})`);
+    const providerName = this.useProviderManager ? 'next provider' : 'same URL';
+    console.log(`[WS] Will retry ${chain.name} via ${providerName} in ${Math.round(delay / 1000)}s (attempt ${attempts + 1}/${this.maxWsReconnectAttempts})`);
 
     this.wsReconnectAttempts.set(chain.chainId, attempts + 1);
 
     setTimeout(async () => {
-      const wsUrl = this.getWsUrl(chain);
+      const wsUrl = this.getNextWsUrl(chain.chainId);
       if (wsUrl) {
         await this.connectWebSocket(chain, wsUrl);
+      } else {
+        console.warn(`[WS] No available WS URLs for ${chain.name}, staying in polling mode`);
       }
     }, delay);
   }
@@ -249,6 +297,7 @@ export class HybridConnectionManager extends EventEmitter {
     health.errorCount++;
 
     this.wsProviders.delete(chain.chainId);
+    this.currentWsUrls.delete(chain.chainId);
 
     this.scheduleReconnect(chain);
   }
