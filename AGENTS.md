@@ -35,6 +35,7 @@ src/
 │   └── db.ts                      # PostgreSQL connection & migrations
 ├── fetchers/
 │   ├── rpc-fetcher.ts             # RPC blockchain data fetcher
+│   ├── rpc-provider-manager.ts    # Multi-provider rotation & failover
 │   ├── price-fetcher.ts           # CoinGecko price fetcher
 │   ├── supply-fetcher.ts          # Token supply fetcher
 │   ├── token-transfer-fetcher.ts  # ERC-20 Transfer event fetcher
@@ -129,6 +130,7 @@ data/
 
 ### Data Fetching
 - `src/fetchers/rpc-fetcher.ts` - RPC blockchain data
+- `src/fetchers/rpc-provider-manager.ts` - Multi-provider rotation & failover
 - `src/fetchers/token-transfer-fetcher.ts` - ERC-20 Transfer events
 - `src/tokens/token-registry.ts` - Token contract metadata
 
@@ -195,6 +197,18 @@ ENABLE_JOB_QUEUE=true
 
 # Optional - Prometheus Metrics
 METRICS_PORT=9090
+
+# Optional - Multi-Provider Rotation (RECOMMENDED)
+# Add multiple Infura keys for automatic rotation when credit limit hit
+INFURA_KEY_1=your_infura_key_1
+INFURA_KEY_2=your_infura_key_2
+INFURA_KEY_3=your_infura_key_3
+
+# Fallback RPC URLs (comma-separated)
+ETH_RPC_FALLBACKS=https://rpc.ankr.com/eth,https://eth.llamarpc.com
+
+# Enable multi-provider rotation (default: true)
+RPC_PROVIDER_ROTATION=true
 ```
 
 ## Dependencies

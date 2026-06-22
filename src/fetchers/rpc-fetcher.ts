@@ -4,28 +4,43 @@ import { ChainConfig } from '../config';
 import { LabelDatabase } from '../label-db';
 import { Transaction, MonitoredTransfer } from '../types';
 import { PriceFetcher } from './price-fetcher';
+import { rpcProviderManager } from './rpc-provider-manager';
 
 export class RpcFetcher {
-  private providers: Map<number, ethers.JsonRpcProvider> = new Map();
+  private legacyProviders: Map<number, ethers.JsonRpcProvider> = new Map();
   private priceFetcher = new PriceFetcher();
+  private useProviderManager: boolean;
 
   constructor(private labelDb: LabelDatabase) {
-    for (const chain of config.chains) {
-      if (chain.rpcUrl) {
-        this.providers.set(chain.chainId, new ethers.JsonRpcProvider(chain.rpcUrl));
+    this.useProviderManager = config.rpcProviderRotation && config.infuraKeys.length > 1;
+    
+    if (this.useProviderManager) {
+      console.log(`[RPC] Using multi-provider rotation with ${config.infuraKeys.length} Infura keys`);
+    } else {
+      // Fallback to legacy single provider mode
+      for (const chain of config.chains) {
+        if (chain.rpcUrl) {
+          this.legacyProviders.set(chain.chainId, new ethers.JsonRpcProvider(chain.rpcUrl));
+        }
       }
     }
   }
 
-  private getProvider(chainId: number): ethers.JsonRpcProvider | undefined {
-    return this.providers.get(chainId);
+  private async getProvider(chainId: number): Promise<ethers.JsonRpcProvider | null> {
+    if (this.useProviderManager) {
+      return rpcProviderManager.getProvider(chainId);
+    }
+    return this.legacyProviders.get(chainId) || null;
   }
 
   async getLatestBlocks(chain: ChainConfig, count: number = 5): Promise<Transaction[]> {
-    const provider = this.getProvider(chain.chainId);
-    if (!provider) return [];
-
+    const startTime = Date.now();
+    let provider: ethers.JsonRpcProvider | null = null;
+    
     try {
+      provider = await this.getProvider(chain.chainId);
+      if (!provider) return [];
+
       const latestBlock = await provider.getBlockNumber();
       const transactions: Transaction[] = [];
 
@@ -60,18 +75,33 @@ export class RpcFetcher {
         }
       }
 
+      // Report success
+      if (this.useProviderManager && provider) {
+        const responseTime = Date.now() - startTime;
+        rpcProviderManager.reportSuccess(chain.chainId, provider._getConnection().url, responseTime);
+      }
+
       return transactions;
     } catch (err: any) {
+      // Report failure
+      if (this.useProviderManager && provider) {
+        const isRateLimit = rpcProviderManager.isRateLimitError(err);
+        rpcProviderManager.reportFailure(chain.chainId, provider._getConnection().url, isRateLimit);
+      }
+      
       console.warn(`[RPC] Error fetching blocks for ${chain.name}: ${err.message}`);
       return [];
     }
   }
 
   async getPendingTransactions(chain: ChainConfig): Promise<MonitoredTransfer[]> {
-    const provider = this.getProvider(chain.chainId);
-    if (!provider) return [];
-
+    const startTime = Date.now();
+    let provider: ethers.JsonRpcProvider | null = null;
+    
     try {
+      provider = await this.getProvider(chain.chainId);
+      if (!provider) return [];
+
       const pendingBlock = await provider.send('eth_getBlockByNumber', ['pending', true]);
       if (!pendingBlock?.transactions) return [];
 
@@ -106,17 +136,32 @@ export class RpcFetcher {
         });
       }
 
+      // Report success
+      if (this.useProviderManager && provider) {
+        const responseTime = Date.now() - startTime;
+        rpcProviderManager.reportSuccess(chain.chainId, provider._getConnection().url, responseTime);
+      }
+
       return transfers;
     } catch (err: any) {
+      // Report failure
+      if (this.useProviderManager && provider) {
+        const isRateLimit = rpcProviderManager.isRateLimitError(err);
+        rpcProviderManager.reportFailure(chain.chainId, provider._getConnection().url, isRateLimit);
+      }
+      
       return [];
     }
   }
 
   async getAddressHistory(chain: ChainConfig, address: string, limit: number = 10): Promise<Transaction[]> {
-    const provider = this.getProvider(chain.chainId);
-    if (!provider) return [];
-
+    const startTime = Date.now();
+    let provider: ethers.JsonRpcProvider | null = null;
+    
     try {
+      provider = await this.getProvider(chain.chainId);
+      if (!provider) return [];
+
       const latestBlock = await provider.getBlockNumber();
       const transactions: Transaction[] = [];
       const addrLower = address.toLowerCase();
@@ -153,23 +198,58 @@ export class RpcFetcher {
         }
       }
 
+      // Report success
+      if (this.useProviderManager && provider) {
+        const responseTime = Date.now() - startTime;
+        rpcProviderManager.reportSuccess(chain.chainId, provider._getConnection().url, responseTime);
+      }
+
       return transactions;
     } catch (err: any) {
+      // Report failure
+      if (this.useProviderManager && provider) {
+        const isRateLimit = rpcProviderManager.isRateLimitError(err);
+        rpcProviderManager.reportFailure(chain.chainId, provider._getConnection().url, isRateLimit);
+      }
+      
       console.warn(`[RPC] Error fetching history for ${address}: ${err.message}`);
       return [];
     }
   }
 
   async traceTransaction(chain: ChainConfig, txHash: string): Promise<any> {
-    const provider = this.getProvider(chain.chainId);
-    if (!provider) return null;
-
+    const startTime = Date.now();
+    let provider: ethers.JsonRpcProvider | null = null;
+    
     try {
+      provider = await this.getProvider(chain.chainId);
+      if (!provider) return null;
+
       const tx = await provider.getTransaction(txHash);
       const receipt = await provider.getTransactionReceipt(txHash);
+      
+      // Report success
+      if (this.useProviderManager && provider) {
+        const responseTime = Date.now() - startTime;
+        rpcProviderManager.reportSuccess(chain.chainId, provider._getConnection().url, responseTime);
+      }
+      
       return { tx, receipt };
-    } catch {
+    } catch (err: any) {
+      // Report failure
+      if (this.useProviderManager && provider) {
+        const isRateLimit = rpcProviderManager.isRateLimitError(err);
+        rpcProviderManager.reportFailure(chain.chainId, provider._getConnection().url, isRateLimit);
+      }
+      
       return null;
     }
+  }
+
+  getProviderStatus() {
+    if (this.useProviderManager) {
+      return rpcProviderManager.getStatus();
+    }
+    return [];
   }
 }

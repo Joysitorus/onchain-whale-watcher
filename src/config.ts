@@ -38,6 +38,23 @@ function getMonitoredChains(): ChainConfig[] {
   });
 }
 
+function getInfuraKeys(): string[] {
+  const keys: string[] = [];
+  
+  // Check for multiple Infura keys (INFURA_KEY_1, INFURA_KEY_2, etc.)
+  for (let i = 1; i <= 10; i++) {
+    const key = process.env[`INFURA_KEY_${i}`];
+    if (key) keys.push(key);
+  }
+  
+  // Fallback to single INFURA_KEY
+  if (keys.length === 0 && process.env.INFURA_KEY) {
+    keys.push(process.env.INFURA_KEY);
+  }
+  
+  return keys;
+}
+
 export const config = {
   chains: getMonitoredChains(),
   arkhamBaseUrl: process.env.ARKHAM_BASE_URL || 'https://intel.arkm.com',
@@ -61,4 +78,8 @@ export const config = {
   // Metrics Configuration
   metricsPort: parseInt(process.env.METRICS_PORT || '9090', 10),
   metricsEnabled: process.env.METRICS_ENABLED !== 'false',
+  
+  // Multi-RPC Provider Configuration
+  infuraKeys: getInfuraKeys(),
+  rpcProviderRotation: process.env.RPC_PROVIDER_ROTATION !== 'false', // Enable by default
 };

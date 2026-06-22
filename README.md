@@ -19,6 +19,7 @@ Agent untuk memonitor transaksi on-chain multi-chain, menganalisis pergerakan wh
 - **Redis Cache** - Cache token transfers dan RPC blocks untuk performa lebih baik
 - **Job Queue (BullMQ)** - Async processing untuk transaksi dan token purchases
 - **Prometheus Metrics** - Monitoring endpoint untuk Grafana/Datadog
+- **Multi-Provider Rotation** - Auto-rotate antara multiple Infura keys + fallback RPCs
 - **PostgreSQL** - Histori transaksi, sinyal, tracked whales, token purchases
 - **Telegram Notifications** - Alert real-time ke Telegram bot
 
@@ -60,6 +61,14 @@ ARBITRUM_WS_URL=wss://arb-mainnet.g.alchemy.com/v2/YOUR_KEY
 AVALANCHE_WS_URL=wss://avax-mainnet.g.alchemy.com/v2/YOUR_KEY
 OPTIMISM_WS_URL=wss://opt-mainnet.g.alchemy.com/v2/YOUR_KEY
 
+# Multiple Infura Keys (otomatis rotate saat credit limit)
+INFURA_KEY_1=your_infura_key_1
+INFURA_KEY_2=your_infura_key_2
+INFURA_KEY_3=your_infura_key_3
+
+# Fallback RPCs (comma-separated, saat semua Infura keys habis)
+ETH_RPC_FALLBACKS=https://rpc.ankr.com/eth,https://eth.llamarpc.com
+
 # Chain yang dimonitor (chain ID, comma-separated)
 MONITORED_CHAINS=1,56,137,42161,43114,10
 
@@ -90,6 +99,9 @@ ENABLE_JOB_QUEUE=true
 
 # Prometheus metrics port
 METRICS_PORT=9090
+
+# Multi-provider rotation (true/false)
+RPC_PROVIDER_ROTATION=true
 ```
 
 ## Menjalankan
@@ -123,6 +135,7 @@ src/
 │   └── db.ts                      # PostgreSQL connection & migrations
 ├── fetchers/
 │   ├── rpc-fetcher.ts             # RPC blockchain data fetcher
+│   ├── rpc-provider-manager.ts    # Multi-provider rotation & failover
 │   ├── price-fetcher.ts           # CoinGecko price fetcher
 │   ├── supply-fetcher.ts          # Token supply fetcher
 │   ├── token-transfer-fetcher.ts  # ERC-20 Transfer event fetcher
@@ -172,6 +185,36 @@ Agent menggunakan mode **Hybrid** yang menggabungkan WebSocket dan Polling untuk
 │                                                             │
 └─────────────────────────────────────────────────────────────┘
 ```
+
+### Multi-Provider Rotation
+
+Saat Infura credit limit habis, sistem otomatis berpindah ke provider lain:
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│              MULTI-PROVIDER ROTATION                        │
+├─────────────────────────────────────────────────────────────┤
+│                                                             │
+│  Priority 1: Infura Key Pool (auto-rotate)                 │
+│    ┌────────────┐  fail  ┌────────────┐  fail  ┌────────┐ │
+│    │ Infura Key │───────▶│ Infura Key │───────▶│Key 3   │ │
+│    │    #1      │        │    #2      │        │        │ │
+│    └────────────┘        └────────────┘        └────────┘ │
+│                                                             │
+│  Priority 2: Fallback RPCs (public endpoints)              │
+│    ┌────────────┐  fail  ┌────────────┐  fail  ┌────────┐ │
+│    │   Ankr     │───────▶│ LlamaRPC   │───────▶│Cloudfl.│ │
+│    └────────────┘        └────────────┘        └────────┘ │
+│                                                             │
+└─────────────────────────────────────────────────────────────┘
+```
+
+**Cara kerja:**
+1. Sistem mencoba Infura Key #1
+2. Jika rate limit (429) → auto-rotate ke Infura Key #2
+3. Jika semua Infura keys habis → fallback ke public RPCs
+4. Setiap provider di-track success/fail rate
+5. Rate-limited provider akan cooldown 60 detik sebelum dicoba lagi
 
 ### Redis Cache
 
