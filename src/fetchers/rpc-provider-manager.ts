@@ -271,14 +271,14 @@ export class RpcProviderManager {
   private buildWsUrlList(chainId: number): WsProviderConfig[] {
     const urls: WsProviderConfig[] = [];
 
-    // Check for custom WS URLs from env vars first (highest priority)
+    // Check for custom WS URLs from env vars (per-chain)
     const envWsUrl = this.getWsUrlFromEnv(chainId);
     if (envWsUrl) {
       urls.push({ url: envWsUrl, name: 'Env-WS', weight: 0 });
-      return urls; // If custom WS URL is set, use only that
+      // Still add fallbacks in case env var URL fails
     }
 
-    // Build WS URLs from Infura keys
+    // Build WS URLs from Infura keys (only for supported chains)
     const infuraKeys = this.getInfuraKeys();
     const infuraNetwork = this.getInfuraWsNetwork(chainId);
 
@@ -288,7 +288,7 @@ export class RpcProviderManager {
         urls.push({
           url: `wss://${infuraNetwork}.infura.io/ws/v3/${key}`,
           name: `Infura-WS-${i + 1}`,
-          weight: i,
+          weight: 10 + i,
         });
       }
     }

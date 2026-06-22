@@ -48,7 +48,7 @@ export class HybridConnectionManager extends EventEmitter {
   async start(): Promise<void> {
     console.log(`[Hybrid] Starting in ${this.mode} mode`);
     if (this.useProviderManager) {
-      console.log(`[Hybrid] WebSocket rotation enabled with ${config.infuraKeys.length} Infura keys`);
+      console.log(`[Hybrid] Provider rotation enabled with ${config.infuraKeys.length} Infura keys`);
     }
 
     for (const chain of config.chains) {
@@ -56,10 +56,6 @@ export class HybridConnectionManager extends EventEmitter {
         console.warn(`[${chain.name}] No RPC URL configured, skipping`);
         continue;
       }
-
-      // Init HTTP provider (always needed for polling fallback)
-      const provider = new ethers.JsonRpcProvider(chain.rpcUrl);
-      this.providers.set(chain.chainId, provider);
 
       // Init health tracking
       this.health.set(chain.chainId, {
@@ -71,6 +67,9 @@ export class HybridConnectionManager extends EventEmitter {
         errorCount: 0,
         reconnectAttempts: 0,
       });
+
+      // HTTP provider is managed by rpcProviderManager (with rotation)
+      // No need to create a separate provider here
 
       // Try WebSocket if enabled
       if (config.enableWebSocket) {
@@ -304,12 +303,26 @@ export class HybridConnectionManager extends EventEmitter {
 
   private startPolling(chain: ChainConfig): void {
     const poll = async () => {
+      let provider: ethers.JsonRpcProvider | null = null;
+      const startTime = Date.now();
+
       try {
-        const provider = this.providers.get(chain.chainId);
+        // Use rpcProviderManager for HTTP providers (with rotation)
+        if (this.useProviderManager) {
+          provider = await rpcProviderManager.getProvider(chain.chainId);
+        } else {
+          provider = this.providers.get(chain.chainId) || null;
+        }
         if (!provider) return;
 
         const health = this.health.get(chain.chainId)!;
         const blockNumber = await provider.getBlockNumber();
+
+        // Report success
+        if (this.useProviderManager) {
+          const responseTime = Date.now() - startTime;
+          rpcProviderManager.reportSuccess(chain.chainId, provider._getConnection().url, responseTime);
+        }
 
         // Only process if we got a new block (or if not using WS)
         if (health.mode === 'polling' || blockNumber > health.lastBlockNumber) {
@@ -346,7 +359,13 @@ export class HybridConnectionManager extends EventEmitter {
           }
         }
       } catch (err: any) {
-        console.warn(`[Poll] Error on ${chain.name}:`, err.message);
+        // Report failure to provider manager
+        if (this.useProviderManager && provider) {
+          const isRateLimit = rpcProviderManager.isRateLimitError(err);
+          rpcProviderManager.reportFailure(chain.chainId, provider._getConnection().url, isRateLimit);
+        }
+
+        console.warn(`[Poll] Error on ${chain.name}: ${err.message?.substring(0, 100)}`);
         const health = this.health.get(chain.chainId)!;
         health.errorCount++;
       }
@@ -381,10 +400,14 @@ export class HybridConnectionManager extends EventEmitter {
   }
 
   async getLatestBlock(chainId: number) {
-    const provider = this.providers.get(chainId);
-    if (!provider) return null;
-
     try {
+      let provider: ethers.JsonRpcProvider | null = null;
+      if (this.useProviderManager) {
+        provider = await rpcProviderManager.getProvider(chainId);
+      } else {
+        provider = this.providers.get(chainId) || null;
+      }
+      if (!provider) return null;
       return await provider.getBlock('latest');
     } catch {
       return null;
@@ -392,10 +415,14 @@ export class HybridConnectionManager extends EventEmitter {
   }
 
   async getTransaction(chainId: number, txHash: string) {
-    const provider = this.providers.get(chainId);
-    if (!provider) return null;
-
     try {
+      let provider: ethers.JsonRpcProvider | null = null;
+      if (this.useProviderManager) {
+        provider = await rpcProviderManager.getProvider(chainId);
+      } else {
+        provider = this.providers.get(chainId) || null;
+      }
+      if (!provider) return null;
       return await provider.getTransaction(txHash);
     } catch {
       return null;
@@ -418,6 +445,12 @@ export class HybridConnectionManager extends EventEmitter {
       }
     }
     this.wsProviders.clear();
+    this.currentWsUrls.clear();
+
+    // Clear RPC provider manager cache
+    if (this.useProviderManager) {
+      rpcProviderManager.clearCache();
+    }
 
     console.log('[Hybrid] All connections stopped');
   }
