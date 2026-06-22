@@ -198,13 +198,13 @@ export class RpcProviderManager {
   }
 
   private getInfuraNetwork(chainId: number): string | null {
+    // Infura does NOT support BSC - only use for supported chains
     const networkMap: Record<number, string> = {
-      1: 'mainnet',
-      56: 'bsc-mainnet',
-      137: 'polygon-mainnet',
-      10: 'optimism-mainnet',
-      42161: 'arbitrum-mainnet',
-      43114: 'avalanche-mainnet',
+      1: 'mainnet',           // Ethereum
+      137: 'polygon-mainnet', // Polygon
+      10: 'optimism-mainnet', // Optimism
+      42161: 'arbitrum-mainnet', // Arbitrum
+      43114: 'avalanche-mainnet', // Avalanche
     };
     return networkMap[chainId] || null;
   }
@@ -317,13 +317,13 @@ export class RpcProviderManager {
   }
 
   private getInfuraWsNetwork(chainId: number): string | null {
+    // Infura does NOT support BSC - only use for supported chains
     const networkMap: Record<number, string> = {
-      1: 'mainnet',
-      56: 'bsc-mainnet',
-      137: 'polygon-mainnet',
-      10: 'optimism-mainnet',
-      42161: 'arbitrum-mainnet',
-      43114: 'avalanche-mainnet',
+      1: 'mainnet',           // Ethereum
+      137: 'polygon-mainnet', // Polygon
+      10: 'optimism-mainnet', // Optimism
+      42161: 'arbitrum-mainnet', // Arbitrum
+      43114: 'avalanche-mainnet', // Avalanche
     };
     return networkMap[chainId] || null;
   }
