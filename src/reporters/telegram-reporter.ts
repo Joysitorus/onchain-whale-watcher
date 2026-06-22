@@ -145,15 +145,22 @@ export class TelegramReporter {
     if (!this.bot) return;
 
     const sigEmoji = this.getSignificanceEmoji(transfer.significance);
-    const alertLabel = transfer.significance === 'critical' ? '\uD83D\uDEA8 CRITICAL ALERT' :
-                       transfer.significance === 'high' ? '\u26A1 HIGH VALUE' : '\uD83D\uDFE1 MEDIUM';
+    const alertLabel = transfer.significance === 'critical' ? '\uD83D\uDEA8 ALERT KRITIS' :
+                       transfer.significance === 'high' ? '\u26A1 NILAI TINGGI' : '\uD83D\uDFE1 MEDIUM';
+
+    const fromTypeLabel = this.getTypeLabel(transfer.fromType);
+    const toTypeLabel = this.getTypeLabel(transfer.toType);
 
     const msg =
-      `${sigEmoji} *${alertLabel}*\n` +
-      `\uD83D\uDCB5 $${(transfer.valueUsd / 1_000_000).toFixed(2)}M\n` +
-      `\uD83C\uDF10 ${transfer.chainName}\n` +
-      `\uD83D\uDC64 ${transfer.fromLabel} \u2192 ${transfer.toLabel}\n` +
-      (transfer.hash ? `\uD83D\uDD17 \`${transfer.hash.slice(0, 10)}...${transfer.hash.slice(-8)}\`\n` : '') +
+      `${sigEmoji} *${alertLabel}*\n\n` +
+      `\uD83D\uDCB5 *Nilai:* $${(transfer.valueUsd / 1_000_000).toFixed(2)}M\n` +
+      `\uD83C\uDF10 *Jaringan:* ${transfer.chainName}\n\n` +
+      `\uD83D\uDD04 *Alur Transaksi:*\n` +
+      `   Dari: ${transfer.fromLabel}\n` +
+      `   Jenis: ${fromTypeLabel}\n` +
+      `   Ke: ${transfer.toLabel}\n` +
+      `   Jenis: ${toTypeLabel}\n` +
+      (transfer.hash ? `\n\uD83D\uDD17 Tx: \`${transfer.hash.slice(0, 12)}...${transfer.hash.slice(-10)}\`\n` : '') +
       `\u23F0 ${new Date(transfer.timestamp).toLocaleString('id-ID')}`;
 
     await this.send(msg);
@@ -164,16 +171,35 @@ export class TelegramReporter {
 
     const isSender = transfer.fromLabel.startsWith('Whale ');
     const whaleLabel = isSender ? transfer.fromLabel : transfer.toLabel;
+    const whaleAddr = isSender ? transfer.from : transfer.to;
     const counterparty = isSender ? transfer.toLabel : transfer.fromLabel;
+    const counterpartyAddr = isSender ? transfer.to : transfer.from;
+    const counterpartyType = isSender ? transfer.toType : transfer.fromType;
+
+    const action = isSender ? 'MENGIRIM' : 'MENERIMA';
+    const direction = isSender ? '📤 OUTFLOW' : '📥 INFLOW';
+
+    // Analisis tujuan berdasarkan jenis counterparty
+    const destinationAnalysis = this.analyzeDestination(counterpartyType, isSender);
 
     const msg =
-      `\uD83D\uDD0D *NEW WHALE DETECTED*\n` +
-      `\uD83E\uDDED *${whaleLabel}*\n` +
-      `\uD83D\uDCB5 $${(transfer.valueUsd / 1_000_000).toFixed(2)}M on ${transfer.chainName}\n` +
-      `\u2194 ${isSender ? 'Sent to' : 'Received from'}: ${counterparty}\n` +
-      (transfer.hash ? `\uD83D\uDD17 \`${transfer.hash.slice(0, 10)}...${transfer.hash.slice(-8)}\`\n` : '') +
+      `\uD83D\uDD0D *WHALE BARU TERDETEKSI*\n\n` +
+      `\uD83E\uDDED *Identitas Whale:*\n` +
+      `   Label: ${whaleLabel}\n` +
+      `   Alamat: \`${whaleAddr.slice(0, 8)}...${whaleAddr.slice(-6)}\`\n\n` +
+      `\uD83D\uDCB5 *Detail Transaksi:*\n` +
+      `   Nilai: *$${(transfer.valueUsd / 1_000_000).toFixed(2)}M*\n` +
+      `   Jaringan: ${transfer.chainName}\n` +
+      `   Arah: ${direction} (${action})\n\n` +
+      `\uD83D\uDD04 *Counterparty:*\n` +
+      `   Nama: ${counterparty}\n` +
+      `   Jenis: ${this.getTypeLabel(counterpartyType)}\n` +
+      `   Alamat: \`${counterpartyAddr.slice(0, 8)}...${counterpartyAddr.slice(-6)}\`\n\n` +
+      `\uD83D\uDCA1 *Analisis:*\n` +
+      `   ${destinationAnalysis}\n` +
+      (transfer.hash ? `\n\uD83D\uDD17 Tx: \`${transfer.hash.slice(0, 12)}...${transfer.hash.slice(-10)}\`\n` : '') +
       `\u23F0 ${new Date(transfer.timestamp).toLocaleString('id-ID')}\n\n` +
-      `\uD83D\uDD0C *Now tracking this address for follow-up activity*`;
+      `\uD83D\uDD0C *Address ini sekarang akan dipantau secara aktif*`;
 
     await this.send(msg);
   }
@@ -263,5 +289,65 @@ export class TelegramReporter {
       'unknown': '\u2753',
     };
     return emojis[direction];
+  }
+
+  private getTypeLabel(type: string): string {
+    const labels: Record<string, string> = {
+      'cex': '\uD83C\uDFE6 Centralized Exchange',
+      'dex': '\uD83D\uDD04 Decentralized Exchange',
+      'cold_wallet': '\u2744\uFE0F Cold Wallet (Penyimpanan)',
+      'hot_wallet': '\uD83D\uDD25 Hot Wallet (Aktif)',
+      'whale': '\uD83D\uDC0B Whale',
+      'market_maker': '\uD83D\uDCCA Market Maker',
+      'bridge': '\uD83C\uDF09 Bridge',
+      'lending': '\uD83D\uDCB0 Lending Protocol',
+      'liquid_staking': '\uD83E\uDD69 Liquid Staking',
+      'wrapped': '\uD83D\uDCE6 Wrapped Token',
+      'burn': '\uD83D\uDD25 Burn Address',
+      'unknown': '\u2753 Tidak Dikenal',
+    };
+    return labels[type] || `\u2753 ${type}`;
+  }
+
+  private analyzeDestination(counterpartyType: string, isSender: boolean): string {
+    // Whale mengirim (OUTFLOW)
+    if (isSender) {
+      switch (counterpartyType) {
+        case 'cex':
+          return '\uD83D\uDD34 *MASUK KE EXCHANGE* \u2014 Potensi JUAL/SELL! Whale mengirim dana ke exchange';
+        case 'cold_wallet':
+          return '\uD83D\uDFE2 *MASUK KE COLD WALLET* \u2014 Akumulasi/Accumulation! Dana disimpan jangka panjang';
+        case 'hot_wallet':
+          return '\uD83D\uDFE1 *MASUK KE HOT WALLET* \u2014 Persiapan trading atau transfer antar wallet';
+        case 'dex':
+          return '\uD83D\uDFE1 *MASUK KE DEX* \u2014 Kemungkinan swap/trading di decentralized exchange';
+        case 'bridge':
+          return '\uD83D\uDFE1 *MASUK KE BRIDGE* \u2014 Cross-chain transfer ke jaringan lain';
+        case 'whale':
+        case 'market_maker':
+          return '\uD83D\uDFE1 *MASUK KE WALLET LAIN* \u2014 Transfer antar whale/market maker';
+        default:
+          return '\u26A0\uFE0F *TRANSFER KE ADDRESS TIDAK DIKENAL*';
+      }
+    }
+
+    // Whale menerima (INFLOW)
+    switch (counterpartyType) {
+      case 'cex':
+        return '\uD83D\uDD34 *DARI EXCHANGE* \u2014 Penarikan dari exchange, potensi HOLD/ACCUMULATE';
+      case 'cold_wallet':
+        return '\uD83D\uDFE2 *DARI COLD WALLET* \u2014 Dana dari penyimpanan jangka panjang';
+      case 'hot_wallet':
+        return '\uD83D\uDFE1 *DARI HOT WALLET* \u2014 Dana aktif dari wallet trading';
+      case 'dex':
+        return '\uD83D\uDFE1 *DARI DEX* \u2014 Hasil swap/trading dari decentralized exchange';
+      case 'bridge':
+        return '\uD83D\uDFE1 *DARI BRIDGE* \u2014 Dana dari jaringan lain';
+      case 'whale':
+      case 'market_maker':
+        return '\uD83D\uDFE1 *DARI WALLET LAIN* \u2014 Transfer dari whale/market maker';
+      default:
+        return '\u26A0\uFE0F *TRANSFER DARI ADDRESS TIDAK DIKENAL*';
+    }
   }
 }
