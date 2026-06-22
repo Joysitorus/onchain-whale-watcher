@@ -13,12 +13,20 @@ import { TelegramReporter } from './reporters/telegram-reporter';
 import { Database } from './database/db';
 import { NotificationManager } from './notifications/notification-manager';
 import { MonitoredTransfer, WhaleTokenPurchase } from './types';
+import { CacheService } from './cache/cache-service';
+import { HybridConnectionManager } from './fetchers/hybrid-connection';
+import { QueueService } from './queue/queue-service';
+import { metrics } from './metrics/metrics-service';
 
 async function main() {
   console.log('=== On-Chain Activity Agent ===');
   console.log(`Monitoring chains: ${config.chains.map(c => c.name).join(', ')}`);
   console.log(`Min transaction value: $${config.minTxValueUsd.toLocaleString()}`);
-  console.log(`Poll interval: ${config.pollIntervalMs / 1000}s\n`);
+  console.log(`Poll interval: ${config.pollIntervalMs / 1000}s`);
+  console.log(`Redis cache: ${config.cacheEnabled ? 'ENABLED' : 'DISABLED'}`);
+  console.log(`Connection mode: ${config.enableWebSocket ? 'HYBRID (WS + Polling)' : 'POLLING ONLY'}`);
+  console.log(`Job Queue: ${config.enableJobQueue ? 'ENABLED' : 'DISABLED'}`);
+  console.log(`Metrics: ${config.metricsEnabled ? 'ENABLED' : 'DISABLED'}\n`);
 
   // Init core modules
   const labelDb = new LabelDatabase();
@@ -28,6 +36,16 @@ async function main() {
   const signalGen = new SignalGenerator();
   const consoleReporter = new ConsoleReporter();
   const notifyManager = new NotificationManager();
+
+  // Init new services
+  const cacheService = new CacheService();
+  const hybridConn = new HybridConnectionManager();
+  const queueService = new QueueService();
+
+  // Start metrics server
+  if (config.metricsEnabled) {
+    metrics.startServer(config.metricsPort);
+  }
 
   // Init token registry
   const rpcUrls = new Map<number, string>();
@@ -44,6 +62,16 @@ async function main() {
 
   // Init whale tracker
   const whaleTracker = new WhaleTracker(labelDb, db, rpcFetcher);
+
+  // Start hybrid connection manager
+  await hybridConn.start();
+
+  // Log connection health status
+  const healthStatus = hybridConn.getHealthStatus();
+  for (const health of healthStatus) {
+    const chain = config.chains.find(c => c.chainId === health.chainId);
+    console.log(`[${chain?.name}] Mode: ${health.mode} | Connected: ${health.connected}`);
+  }
 
   // Init Telegram (if configured)
   const telegramReporter = config.telegramBotToken && config.telegramChatId
@@ -63,11 +91,27 @@ async function main() {
     await db.upsertAddress(entity.address, 1, entity.name, entity.entityType, 'arkham');
   }
 
+  // Register job queue workers
+  if (config.enableJobQueue) {
+    queueService.registerWorker('whale-transactions', async (job) => {
+      const { transfers } = job.data;
+      await db.saveTransfers(transfers);
+      return { success: true, processed: transfers.length };
+    });
+
+    queueService.registerWorker('token-purchases', async (job) => {
+      const { purchases } = job.data;
+      tokenPurchaseDetector.addPurchases(purchases);
+      return { success: true, processed: purchases.length };
+    });
+  }
+
   console.log('[Init] Starting monitoring loop...\n');
 
   async function poll() {
     const allTransfers: MonitoredTransfer[] = [];
-    let pollStartTime = Date.now();
+    const pollStartTime = Date.now();
+    const pollTimer = metrics.pollDuration.startTimer({ chain_id: 'all' });
 
     // Step 1: Follow-up on previously tracked whales
     const followUpTransfers = await whaleTracker.followUpTrackedWhales();
@@ -84,8 +128,15 @@ async function main() {
         continue;
       }
 
-      const txs = await rpcFetcher.getLatestBlocks(chain, 3);
-      for (const tx of txs) {
+      // Cache RPC blocks for 15 seconds
+      const blockCacheKey = `blocks_${chain.chainId}`;
+      const txs = await cacheService.getOrSet(
+        blockCacheKey,
+        () => rpcFetcher.getLatestBlocks(chain, 3),
+        15000
+      );
+      
+      for (const tx of txs || []) {
         if (tx.valueUsd < config.minTxValueUsd) continue;
 
         allTransfers.push({
@@ -110,13 +161,33 @@ async function main() {
         allTransfers.push(ptx);
       }
 
-      // Step 3b: Fetch ERC-20 token transfers
+      // Step 3b: Fetch ERC-20 token transfers (with cache)
       try {
-        const tokenPurchases = await tokenTransferFetcher.fetchRecentPurchases(chain, 100);
-        tokenPurchaseDetector.addPurchases(tokenPurchases);
-
-        if (tokenPurchases.length > 0) {
+        const cacheKey = `token_transfers_${chain.chainId}`;
+        const fetchTimer = metrics.txFetchDuration.startTimer({ chain_id: chain.chainId.toString() });
+        
+        let tokenPurchases = await cacheService.getOrSet(
+          cacheKey,
+          () => tokenTransferFetcher.fetchRecentPurchases(chain, 100),
+          30000 // 30 seconds cache
+        );
+        
+        fetchTimer();
+        
+        if (tokenPurchases && tokenPurchases.length > 0) {
+          tokenPurchaseDetector.addPurchases(tokenPurchases);
+          metrics.cacheHits.inc({ cache_type: 'token_transfers' });
           console.log(`[TokenFetcher] ${tokenPurchases.length} token transfers detected on ${chain.name}`);
+        } else {
+          metrics.cacheMisses.inc({ cache_type: 'token_transfers' });
+        }
+        
+        // Add to job queue if enabled
+        if (config.enableJobQueue && tokenPurchases && tokenPurchases.length > 0) {
+          await queueService.addJob('token-purchases', {
+            type: 'process',
+            payload: { purchases: tokenPurchases },
+          });
         }
       } catch (err: any) {
         console.warn(`[TokenFetcher] Error on ${chain.name}: ${err.message}`);
@@ -138,8 +209,15 @@ async function main() {
     // Step 5: Detect whale-to-exchange movements
     const exchangeMovements = await whaleTracker.detectExchangeMovement();
 
-    // Step 6: Save to database
-    await db.saveTransfers(allTransfers);
+    // Step 6: Save to database (via job queue if enabled)
+    if (config.enableJobQueue && allTransfers.length > 0) {
+      await queueService.addJob('whale-transactions', {
+        type: 'save',
+        payload: { transfers: allTransfers },
+      });
+    } else {
+      await db.saveTransfers(allTransfers);
+    }
 
     // Step 7: Analyze
     analyzer.addTransfers(allTransfers);
@@ -271,6 +349,12 @@ async function main() {
 
     const stats = notifyManager.getStats();
     const pollDuration = Date.now() - pollStartTime;
+    pollTimer();
+    
+    // Record metrics
+    metrics.txTotal.inc({ chain_id: 'all', chain_name: 'all', type: 'transfer' }, allTransfers.length);
+    metrics.whaleDetected.inc({ chain_id: 'all', token: 'native' }, newWhales.length);
+    
     console.log(`[Poll] Completed in ${(pollDuration / 1000).toFixed(1)}s | Notified: ${stats.deduped} unique txs, ${stats.whalesTracked} whales tracked`);
   }
 
@@ -280,12 +364,30 @@ async function main() {
   // Schedule polling
   const intervalId = setInterval(poll, config.pollIntervalMs);
 
+  // Health status check every 5 minutes
+  const healthIntervalId = setInterval(() => {
+    const healthStatus = hybridConn.getHealthStatus();
+    console.log('\n[Health] Connection status:');
+    for (const health of healthStatus) {
+      const chain = config.chains.find(c => c.chainId === health.chainId);
+      const lastUpdate = health.lastUpdate > 0 
+        ? `${Math.round((Date.now() - health.lastUpdate) / 1000)}s ago`
+        : 'never';
+      console.log(`  ${chain?.name}: ${health.mode} | Errors: ${health.errorCount} | Last: ${lastUpdate}`);
+    }
+  }, 5 * 60 * 1000); // Every 5 minutes
+
   console.log(`\n[Agent] Running. Next poll in ${config.pollIntervalMs / 1000}s. Press Ctrl+C to stop.\n`);
 
   // Graceful shutdown
   process.on('SIGINT', async () => {
     console.log('\n[Agent] Shutting down...');
     clearInterval(intervalId);
+    clearInterval(healthIntervalId);
+    await hybridConn.stop();
+    await queueService.disconnect();
+    await cacheService.disconnect();
+    await metrics.stopServer();
     await db.disconnect();
     process.exit(0);
   });
@@ -293,6 +395,11 @@ async function main() {
   process.on('SIGTERM', async () => {
     console.log('\n[Agent] Shutting down...');
     clearInterval(intervalId);
+    clearInterval(healthIntervalId);
+    await hybridConn.stop();
+    await queueService.disconnect();
+    await cacheService.disconnect();
+    await metrics.stopServer();
     await db.disconnect();
     process.exit(0);
   });

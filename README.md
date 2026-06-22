@@ -5,6 +5,7 @@ Agent untuk memonitor transaksi on-chain multi-chain, menganalisis pergerakan wh
 ## Fitur
 
 - **Multi-chain** - Ethereum, BSC, Polygon, Optimism, Arbitrum, Avalanche
+- **Hybrid Connection** - WebSocket real-time + Polling fallback untuk koneksi lebih stabil
 - **Arkham Scraper** - Mengambil entity labels dan whale alerts dari Arkham Intelligence
 - **RPC Fetcher** - Query transaksi langsung dari blockchain via RPC nodes
 - **Address Labeling** - Database 100+ labelled addresses (exchange, whale, DeFi, bridge, cold/hot wallet)
@@ -15,6 +16,9 @@ Agent untuk memonitor transaksi on-chain multi-chain, menganalisis pergerakan wh
 - **Transfer Direction Analysis** - Mendeteksi arah transfer (exchange→cold, cold→exchange, whale→exchange, dll)
 - **Exchange Flow Analysis** - Deteksi inflow/outflow ke exchange
 - **Market Signal Generator** - Output bullish/bearish/neutral dengan confidence score
+- **Redis Cache** - Cache token transfers dan RPC blocks untuk performa lebih baik
+- **Job Queue (BullMQ)** - Async processing untuk transaksi dan token purchases
+- **Prometheus Metrics** - Monitoring endpoint untuk Grafana/Datadog
 - **PostgreSQL** - Histori transaksi, sinyal, tracked whales, token purchases
 - **Telegram Notifications** - Alert real-time ke Telegram bot
 
@@ -25,6 +29,7 @@ Agent untuk memonitor transaksi on-chain multi-chain, menganalisis pergerakan wh
 - RPC URL dari Infura/Alchemy (gratis)
 - (Opsional) PostgreSQL database - Railway, Neon, Supabase, atau lokal
 - (Opsional) Telegram Bot Token dari [@BotFather](https://t.me/BotFather)
+- (Opsional) Redis - Railway, Upstash, atau lokal (untuk caching & job queue)
 
 ## Instalasi
 
@@ -47,6 +52,14 @@ ARBITRUM_RPC_URL=https://arb-mainnet.g.alchemy.com/v2/YOUR_KEY
 AVALANCHE_RPC_URL=https://api.avax.network/ext/bc/C/rpc
 OPTIMISM_RPC_URL=https://opt-mainnet.g.alchemy.com/v2/YOUR_KEY
 
+# WebSocket URLs (untuk hybrid mode - real-time + polling fallback)
+ETH_WS_URL=wss://eth-mainnet.g.alchemy.com/v2/YOUR_KEY
+BSC_WS_URL=wss://bsc-mainnet.g.alchemy.com/v2/YOUR_KEY
+POLYGON_WS_URL=wss://polygon-mainnet.g.alchemy.com/v2/YOUR_KEY
+ARBITRUM_WS_URL=wss://arb-mainnet.g.alchemy.com/v2/YOUR_KEY
+AVALANCHE_WS_URL=wss://avax-mainnet.g.alchemy.com/v2/YOUR_KEY
+OPTIMISM_WS_URL=wss://opt-mainnet.g.alchemy.com/v2/YOUR_KEY
+
 # Chain yang dimonitor (chain ID, comma-separated)
 MONITORED_CHAINS=1,56,137,42161,43114,10
 
@@ -65,6 +78,18 @@ DATABASE_URL=postgresql://user:password@host:port/railway
 # Telegram (opsional)
 TELEGRAM_BOT_TOKEN=123456:ABC-DEF1234ghIkl-zyx57W2v1u123ew11
 TELEGRAM_CHAT_ID=-1001234567890
+
+# Redis (opsional - untuk caching & job queue)
+REDIS_URL=redis://default:password@redis.railway.internal:6379
+
+# WebSocket mode (true/false)
+ENABLE_WEBSOCKET=true
+
+# Job queue (true/false)
+ENABLE_JOB_QUEUE=true
+
+# Prometheus metrics port
+METRICS_PORT=9090
 ```
 
 ## Menjalankan
@@ -92,13 +117,20 @@ src/
 │   ├── transaction-analyzer.ts    # Exchange flow, whale movement & transfer direction analysis
 │   ├── whale-tracker.ts           # New whale detection & follow-up
 │   └── token-purchase-detector.ts # Whale token purchase analysis
+├── cache/
+│   └── cache-service.ts           # Redis cache for token transfers & RPC blocks
 ├── database/
 │   └── db.ts                      # PostgreSQL connection & migrations
 ├── fetchers/
 │   ├── rpc-fetcher.ts             # RPC blockchain data fetcher
 │   ├── price-fetcher.ts           # CoinGecko price fetcher
 │   ├── supply-fetcher.ts          # Token supply fetcher
-│   └── token-transfer-fetcher.ts  # ERC-20 Transfer event fetcher
+│   ├── token-transfer-fetcher.ts  # ERC-20 Transfer event fetcher
+│   └── hybrid-connection.ts       # WebSocket + Polling fallback manager
+├── metrics/
+│   └── metrics-service.ts         # Prometheus metrics endpoint
+├── queue/
+│   └── queue-service.ts           # BullMQ job queue for async processing
 ├── tokens/
 │   └── token-registry.ts          # Token contract registry per chain
 ├── reporters/
@@ -110,11 +142,56 @@ src/
 │   └── signal-generator.ts        # Market signal generation
 └── notifications/
     └── notification-manager.ts    # Notification deduplication
+
 data/
 └── known-addresses.json           # Pre-labelled addresses (exchange, cold/hot wallet, DeFi)
 ```
 
 ## Cara Kerja
+
+### Hybrid Connection Mode
+
+Agent menggunakan mode **Hybrid** yang menggabungkan WebSocket dan Polling untuk koneksi yang lebih stabil:
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                    HYBRID MODE                              │
+├─────────────────────────────────────────────────────────────┤
+│                                                             │
+│  ┌──────────────┐      ┌──────────────┐                    │
+│  │  WebSocket   │─────▶│  Real-time   │                    │
+│  │  (Primary)   │      │  Events      │                    │
+│  └──────────────┘      └──────────────┘                    │
+│         │                                                 │
+│         │ Jika disconnect                                 │
+│         ▼                                                 │
+│  ┌──────────────┐      ┌──────────────┐                    │
+│  │   Polling    │─────▶│   Fallback   │                    │
+│  │  (Backup)    │      │   Mode       │                    │
+│  └──────────────┘      └──────────────┘                    │
+│                                                             │
+└─────────────────────────────────────────────────────────────┘
+```
+
+### Redis Cache
+
+- Cache token transfers selama 30 detik
+- Cache RPC blocks selama 15 detik
+- Mengurangi RPC calls dan menghemat credits
+
+### Job Queue (BullMQ)
+
+- Async processing untuk transaksi besar
+- Auto-retry dengan exponential backoff
+- Dead letter queue untuk failed jobs
+
+### Prometheus Metrics
+
+- Endpoint: `http://localhost:9090/metrics`
+- Health check: `http://localhost:9090/health`
+- Metrics: transaction count, whale detection, cache hit rate, dll
+
+---
 
 Setiap polling cycle:
 

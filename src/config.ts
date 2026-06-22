@@ -46,4 +46,19 @@ export const config = {
   databaseUrl: process.env.DATABASE_URL || '',
   telegramBotToken: process.env.TELEGRAM_BOT_TOKEN || '',
   telegramChatId: process.env.TELEGRAM_CHAT_ID || '',
+  
+  // Redis Configuration
+  redisUrl: process.env.REDIS_URL || '',
+  cacheEnabled: !!process.env.REDIS_URL,
+  cacheDefaultTtlMs: parseInt(process.env.CACHE_TTL_MS || '300000', 10), // 5 minutes
+  
+  // WebSocket Configuration
+  enableWebSocket: process.env.ENABLE_WEBSOCKET === 'true',
+  
+  // Job Queue Configuration
+  enableJobQueue: process.env.ENABLE_JOB_QUEUE !== 'false',
+  
+  // Metrics Configuration
+  metricsPort: parseInt(process.env.METRICS_PORT || '9090', 10),
+  metricsEnabled: process.env.METRICS_ENABLED !== 'false',
 };
