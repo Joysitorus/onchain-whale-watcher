@@ -1,0 +1,11 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "default_agent": "whale-token-tracker",
+  "agent": {
+    "whale-token-tracker": {
+      "description": "Tracks whale token purchases across multiple blockchain networks using token contract addresses",
+      "mode": "all",
+      "model": "anthropic/claude-sonnet-4-6"
+    }
+  }
+}

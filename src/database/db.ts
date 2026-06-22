@@ -1,6 +1,6 @@
 import { Pool, PoolClient, QueryResult } from 'pg';
 import { config } from '../config';
-import { MarketSignal, MonitoredTransfer, Transaction } from '../types';
+import { MarketSignal, MonitoredTransfer, Transaction, WhaleTokenPurchase } from '../types';
 
 export class Database {
   private pool: Pool | null = null;
@@ -119,6 +119,41 @@ export class Database {
       `);
       await client.query(`
         CREATE INDEX IF NOT EXISTS idx_whale_status ON whale_tracking(status)
+      `);
+
+      await client.query(`
+        CREATE TABLE IF NOT EXISTS whale_token_purchases (
+          id SERIAL PRIMARY KEY,
+          hash VARCHAR(255) NOT NULL,
+          chain_id INTEGER NOT NULL,
+          chain_name VARCHAR(50),
+          token_address VARCHAR(255) NOT NULL,
+          token_symbol VARCHAR(20),
+          token_name VARCHAR(255),
+          token_decimals INTEGER DEFAULT 18,
+          amount VARCHAR(100),
+          amount_usd NUMERIC(20, 2),
+          whale_address VARCHAR(255) NOT NULL,
+          whale_label VARCHAR(255),
+          whale_type VARCHAR(50),
+          counterparty VARCHAR(255),
+          counterparty_label VARCHAR(255),
+          counterparty_type VARCHAR(50),
+          direction VARCHAR(10),
+          block_number BIGINT,
+          timestamp BIGINT NOT NULL,
+          created_at TIMESTAMP DEFAULT NOW()
+        )
+      `);
+
+      await client.query(`
+        CREATE INDEX IF NOT EXISTS idx_token_purchases_timestamp ON whale_token_purchases(timestamp)
+      `);
+      await client.query(`
+        CREATE INDEX IF NOT EXISTS idx_token_purchases_whale ON whale_token_purchases(whale_address)
+      `);
+      await client.query(`
+        CREATE INDEX IF NOT EXISTS idx_token_purchases_token ON whale_token_purchases(token_address, chain_id)
       `);
 
       await client.query('COMMIT');
@@ -329,6 +364,147 @@ export class Database {
     } catch {
       return [];
     }
+  }
+
+  async saveTokenPurchase(purchase: WhaleTokenPurchase): Promise<void> {
+    if (!this.connected || !this.pool) return;
+    try {
+      await this.pool.query(
+        `INSERT INTO whale_token_purchases
+         (hash, chain_id, chain_name, token_address, token_symbol, token_name,
+          token_decimals, amount, amount_usd, whale_address, whale_label,
+          whale_type, counterparty, counterparty_label, counterparty_type,
+          direction, block_number, timestamp)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18)
+         ON CONFLICT DO NOTHING`,
+        [
+          purchase.hash,
+          purchase.chainId,
+          purchase.chainName,
+          purchase.tokenAddress,
+          purchase.tokenSymbol,
+          purchase.tokenName,
+          purchase.tokenDecimals,
+          purchase.amount,
+          purchase.amountUsd,
+          purchase.whaleAddress.toLowerCase(),
+          purchase.whaleLabel,
+          purchase.whaleType,
+          purchase.counterparty,
+          purchase.counterpartyLabel,
+          purchase.counterpartyType,
+          purchase.direction,
+          purchase.blockNumber,
+          purchase.timestamp,
+        ]
+      );
+    } catch (err: any) {
+      console.warn('[DB] Failed to save token purchase:', err.message);
+    }
+  }
+
+  async saveTokenPurchases(purchases: WhaleTokenPurchase[]): Promise<void> {
+    for (const purchase of purchases) {
+      await this.saveTokenPurchase(purchase);
+    }
+  }
+
+  async getRecentTokenPurchases(limit: number = 50): Promise<WhaleTokenPurchase[]> {
+    if (!this.connected || !this.pool) return [];
+    try {
+      const result = await this.pool.query(
+        `SELECT * FROM whale_token_purchases
+         ORDER BY timestamp DESC LIMIT $1`,
+        [limit]
+      );
+      return result.rows.map(this.mapTokenPurchaseRow);
+    } catch {
+      return [];
+    }
+  }
+
+  async getTokenPurchasesByToken(tokenAddress: string, chainId: number, limit: number = 50): Promise<WhaleTokenPurchase[]> {
+    if (!this.connected || !this.pool) return [];
+    try {
+      const result = await this.pool.query(
+        `SELECT * FROM whale_token_purchases
+         WHERE token_address = $1 AND chain_id = $2
+         ORDER BY timestamp DESC LIMIT $3`,
+        [tokenAddress.toLowerCase(), chainId, limit]
+      );
+      return result.rows.map(this.mapTokenPurchaseRow);
+    } catch {
+      return [];
+    }
+  }
+
+  async getTokenPurchasesByWhale(whaleAddress: string, limit: number = 50): Promise<WhaleTokenPurchase[]> {
+    if (!this.connected || !this.pool) return [];
+    try {
+      const result = await this.pool.query(
+        `SELECT * FROM whale_token_purchases
+         WHERE whale_address = $1
+         ORDER BY timestamp DESC LIMIT $2`,
+        [whaleAddress.toLowerCase(), limit]
+      );
+      return result.rows.map(this.mapTokenPurchaseRow);
+    } catch {
+      return [];
+    }
+  }
+
+  async getTopAccumulatedTokens(chainId?: number, limit: number = 10): Promise<any[]> {
+    if (!this.connected || !this.pool) return [];
+    try {
+      let query = `
+        SELECT token_address, token_symbol, token_name, chain_id, chain_name,
+               SUM(CASE WHEN direction = 'buy' THEN amount_usd ELSE 0 END) as total_bought,
+               SUM(CASE WHEN direction = 'sell' THEN amount_usd ELSE 0 END) as total_sold,
+               COUNT(DISTINCT whale_address) as unique_whales,
+               SUM(amount_usd) as total_volume
+        FROM whale_token_purchases
+      `;
+      const params: any[] = [];
+      if (chainId) {
+        query += ' WHERE chain_id = $1';
+        params.push(chainId);
+      }
+      query += `
+        GROUP BY token_address, token_symbol, token_name, chain_id, chain_name
+        HAVING SUM(CASE WHEN direction = 'buy' THEN amount_usd ELSE 0 END) >
+               SUM(CASE WHEN direction = 'sell' THEN amount_usd ELSE 0 END)
+        ORDER BY total_bought DESC
+        LIMIT $${params.length + 1}
+      `;
+      params.push(limit);
+      const result = await this.pool.query(query, params);
+      return result.rows;
+    } catch {
+      return [];
+    }
+  }
+
+  private mapTokenPurchaseRow(row: any): WhaleTokenPurchase {
+    return {
+      hash: row.hash,
+      chainId: row.chain_id,
+      chainName: row.chain_name,
+      tokenAddress: row.token_address,
+      tokenSymbol: row.token_symbol,
+      tokenName: row.token_name,
+      tokenDecimals: row.token_decimals,
+      amount: row.amount,
+      amountUsd: parseFloat(row.amount_usd),
+      whaleAddress: row.whale_address,
+      whaleLabel: row.whale_label,
+      whaleType: row.whale_type,
+      counterparty: row.counterparty,
+      counterpartyLabel: row.counterparty_label,
+      counterpartyType: row.counterparty_type,
+      timestamp: row.timestamp,
+      blockNumber: row.block_number,
+      direction: row.direction,
+    };
   }
 
   private mapTransferRow(row: any): MonitoredTransfer {

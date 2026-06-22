@@ -40,6 +40,27 @@ export interface MonitoredTransfer {
   significance: 'low' | 'medium' | 'high' | 'critical';
 }
 
+export interface WhaleTokenPurchase {
+  hash: string;
+  chainId: number;
+  chainName: string;
+  tokenAddress: string;
+  tokenSymbol: string;
+  tokenName: string;
+  tokenDecimals: number;
+  amount: string;
+  amountUsd: number;
+  whaleAddress: string;
+  whaleLabel: string;
+  whaleType: string;
+  counterparty: string;
+  counterpartyLabel: string;
+  counterpartyType: string;
+  timestamp: number;
+  blockNumber: number;
+  direction: 'buy' | 'sell';
+}
+
 export interface ArkhamEntity {
   address: string;
   name: string;
@@ -56,6 +77,22 @@ export interface MarketSignal {
   reason: string;
   relatedTransfers: MonitoredTransfer[];
   timestamp: number;
+  supplyImpact?: SupplyImpact;
+  tokenPurchases?: WhaleTokenPurchase[];
+}
+
+export interface SupplyImpact {
+  tokenSymbol: string;
+  chainId: number;
+  walletAddress: string;
+  walletLabel: string;
+  holdingsUsd: number;
+  totalSupplyUsd: number;
+  supplyPercentage: number;
+  previousPercentage: number;
+  changePercent: number;
+  trend: 'accumulating' | 'distributing' | 'stable';
+  tokenPrice: number;
 }
 
 export type ChainId = number;

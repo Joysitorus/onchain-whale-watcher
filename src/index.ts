@@ -2,14 +2,17 @@ import { config } from './config';
 import { LabelDatabase } from './label-db';
 import { ArkhamScraper } from './scrapers/arkham-scraper';
 import { RpcFetcher } from './fetchers/rpc-fetcher';
+import { TokenTransferFetcher } from './fetchers/token-transfer-fetcher';
 import { TransactionAnalyzer } from './analyzers/transaction-analyzer';
 import { WhaleTracker } from './analyzers/whale-tracker';
+import { TokenPurchaseDetector } from './analyzers/token-purchase-detector';
+import { TokenRegistry } from './tokens/token-registry';
 import { SignalGenerator } from './signals/signal-generator';
 import { ConsoleReporter } from './reporters/console-reporter';
 import { TelegramReporter } from './reporters/telegram-reporter';
 import { Database } from './database/db';
 import { NotificationManager } from './notifications/notification-manager';
-import { MonitoredTransfer } from './types';
+import { MonitoredTransfer, WhaleTokenPurchase } from './types';
 
 async function main() {
   console.log('=== On-Chain Activity Agent ===');
@@ -25,6 +28,15 @@ async function main() {
   const signalGen = new SignalGenerator();
   const consoleReporter = new ConsoleReporter();
   const notifyManager = new NotificationManager();
+
+  // Init token registry
+  const rpcUrls = new Map<number, string>();
+  for (const chain of config.chains) {
+    if (chain.rpcUrl) rpcUrls.set(chain.chainId, chain.rpcUrl);
+  }
+  const tokenRegistry = new TokenRegistry(rpcUrls);
+  const tokenTransferFetcher = new TokenTransferFetcher(tokenRegistry);
+  const tokenPurchaseDetector = new TokenPurchaseDetector(labelDb, new Database());
 
   // Init database
   const db = new Database();
@@ -97,9 +109,25 @@ async function main() {
         if (ptx.valueUsd < config.minTxValueUsd) continue;
         allTransfers.push(ptx);
       }
+
+      // Step 3b: Fetch ERC-20 token transfers
+      try {
+        const tokenPurchases = await tokenTransferFetcher.fetchRecentPurchases(chain, 100);
+        tokenPurchaseDetector.addPurchases(tokenPurchases);
+
+        if (tokenPurchases.length > 0) {
+          console.log(`[TokenFetcher] ${tokenPurchases.length} token transfers detected on ${chain.name}`);
+        }
+      } catch (err: any) {
+        console.warn(`[TokenFetcher] Error on ${chain.name}: ${err.message}`);
+      }
     }
 
-    if (allTransfers.length === 0) {
+    // Step 3c: Detect whale token purchases from native transfers
+    const whaleTokenPurchases = tokenPurchaseDetector.detectWhaleTokenPurchases(allTransfers);
+    tokenPurchaseDetector.addPurchases(whaleTokenPurchases);
+
+    if (allTransfers.length === 0 && whaleTokenPurchases.length === 0) {
       console.log(`[${new Date().toLocaleTimeString()}] No significant transfers detected`);
       return;
     }
@@ -119,7 +147,20 @@ async function main() {
 
     // Step 8: Generate signals
     const signal = signalGen.generate(analysis, allTransfers);
-    const whaleSignal = whaleTracker.generateWhaleSignal(allTransfers);
+    const whaleSignal = await whaleTracker.generateWhaleSignal(allTransfers);
+
+    // Step 8b: Analyze token purchases
+    const tokenSummaries = tokenPurchaseDetector.analyzeTokenPurchases();
+    const whaleActivities = tokenPurchaseDetector.analyzeWhaleActivity();
+    const topAccumulated = tokenPurchaseDetector.getTopAccumulatedTokens(5);
+
+    if (topAccumulated.length > 0) {
+      console.log('\n[TokenDetector] Top tokens being accumulated by whales:');
+      for (const t of topAccumulated) {
+        const buys = t.purchases.filter(p => p.direction === 'buy').reduce((s, p) => s + p.amountUsd, 0);
+        console.log(`  ${t.tokenSymbol} (${t.chainName}) - $${(buys / 1000).toFixed(1)}K bought by ${t.uniqueWhales.size} whale(s)`);
+      }
+    }
 
     // Step 9: Save signal to database
     await db.saveSignal(signal, analysis);
@@ -131,6 +172,11 @@ async function main() {
     }
     consoleReporter.reportAnalysis(analysis);
     consoleReporter.reportSignal(signal);
+
+    // Report token purchases
+    if (tokenSummaries.length > 0) {
+      consoleReporter.reportTokenPurchases(tokenSummaries, whaleActivities);
+    }
 
     // Step 11: Send Telegram notifications (filtered + throttled)
     if (telegramReporter) {
@@ -171,6 +217,43 @@ async function main() {
       // Whale signal (only if new whales detected and signal is meaningful)
       if (whaleSignal && freshNewWhales.length > 0) {
         await telegramReporter.sendSignal(whaleSignal, analysis);
+      }
+
+      // Token purchase alerts
+      const significantTokenBuys = whaleActivities.filter(a =>
+        a.direction === 'accumulating' && a.netPositionUsd >= 100000
+      );
+      for (const activity of significantTokenBuys) {
+        if (!notifyManager.isTransferDuplicate({
+          hash: `token-buy-${activity.whaleAddress}-${activity.tokenAddress}-${activity.chainId}`,
+          chainId: activity.chainId,
+          chainName: activity.chainName,
+          from: '',
+          fromLabel: '',
+          fromType: '',
+          to: activity.whaleAddress,
+          toLabel: activity.whaleLabel,
+          toType: 'whale',
+          valueUsd: activity.netPositionUsd,
+          timestamp: Date.now(),
+          significance: 'high',
+        })) {
+          await telegramReporter.sendTokenPurchaseAlert(activity);
+          notifyManager.markTransferSent({
+            hash: `token-buy-${activity.whaleAddress}-${activity.tokenAddress}-${activity.chainId}`,
+            chainId: activity.chainId,
+            chainName: activity.chainName,
+            from: '',
+            fromLabel: '',
+            fromType: '',
+            to: activity.whaleAddress,
+            toLabel: activity.whaleLabel,
+            toType: 'whale',
+            valueUsd: activity.netPositionUsd,
+            timestamp: Date.now(),
+            significance: 'high',
+          });
+        }
       }
 
       // Periodic summary (only if there were meaningful events)

@@ -1,7 +1,8 @@
 import { LabelDatabase } from '../label-db';
 import { Database } from '../database/db';
 import { RpcFetcher } from '../fetchers/rpc-fetcher';
-import { MonitoredTransfer, MarketSignal } from '../types';
+import { SupplyFetcher } from '../fetchers/supply-fetcher';
+import { MonitoredTransfer, MarketSignal, SupplyImpact } from '../types';
 import { config } from '../config';
 
 interface TrackedWhale {
@@ -18,12 +19,17 @@ interface TrackedWhale {
 export class WhaleTracker {
   private newlyIdentified: MonitoredTransfer[] = [];
   private followUpResults: MonitoredTransfer[] = [];
+  private supplyFetcher: SupplyFetcher;
+  private walletHoldings: Map<string, number> = new Map(); // key: `${address}:${chainId}`, value: USD
+  private previousPercentages: Map<string, number> = new Map(); // key: `${address}:${chainId}`, value: percentage
 
   constructor(
     private labelDb: LabelDatabase,
     private db: Database,
     private rpcFetcher: RpcFetcher
-  ) {}
+  ) {
+    this.supplyFetcher = new SupplyFetcher();
+  }
 
   /**
    * Scan all transfers for unknown addresses making large transactions.
@@ -149,7 +155,7 @@ export class WhaleTracker {
   /**
    * Generate a signal specifically about new whale activity.
    */
-  generateWhaleSignal(transfers: MonitoredTransfer[]): MarketSignal | null {
+  async generateWhaleSignal(transfers: MonitoredTransfer[]): Promise<MarketSignal | null> {
     const newWhales = transfers.filter(t => t.fromLabel.startsWith('Whale ') || t.toLabel.startsWith('Whale '));
     if (newWhales.length === 0) return null;
 
@@ -160,25 +166,73 @@ export class WhaleTracker {
     let direction: MarketSignal['direction'] = 'neutral';
     let confidence = 0;
     let reason = '';
+    let supplyImpact: SupplyImpact | undefined;
+
+    // Find the most significant whale for supply impact analysis
+    const topWhale = newWhales.reduce((max, t) => t.valueUsd > max.valueUsd ? t : max, newWhales[0]);
+    const whaleAddr = topWhale.fromLabel.startsWith('Whale ') ? topWhale.from : topWhale.to;
+
+    // Calculate supply impact for native tokens
+    const supplyData = await this.supplyFetcher.getNativeTokenSupply(topWhale.chainId);
+    if (supplyData) {
+      const holdingsKey = `${whaleAddr}:${topWhale.chainId}`;
+      const currentHoldings = this.walletHoldings.get(holdingsKey) || 0;
+      const newHoldings = currentHoldings + topWhale.valueUsd;
+      this.walletHoldings.set(holdingsKey, newHoldings);
+
+      const tokenPrice = supplyData.circulating > 0 ? supplyData.totalUsd / supplyData.circulating : 0;
+      const currentPercentage = this.supplyFetcher.calculateSupplyPercentage(
+        newHoldings, tokenPrice, supplyData.circulating
+      );
+
+      const prevPercentage = this.previousPercentages.get(holdingsKey) || 0;
+      const trend = this.supplyFetcher.getAccumulationSignal(currentPercentage, prevPercentage);
+
+      this.previousPercentages.set(holdingsKey, currentPercentage);
+
+      supplyImpact = {
+        tokenSymbol: config.chains.find(c => c.chainId === topWhale.chainId)?.nativeToken || 'TOKEN',
+        chainId: topWhale.chainId,
+        walletAddress: whaleAddr,
+        walletLabel: topWhale.fromLabel.startsWith('Whale ') ? topWhale.fromLabel : topWhale.toLabel,
+        holdingsUsd: newHoldings,
+        totalSupplyUsd: supplyData.totalUsd,
+        supplyPercentage: currentPercentage,
+        previousPercentage: prevPercentage,
+        changePercent: trend.changePercent,
+        trend: trend.signal,
+        tokenPrice,
+      };
+
+      // Adjust signal based on supply accumulation
+      if (trend.signal === 'accumulating' && currentPercentage > 0.01) {
+        confidence += 20;
+        reason += ` | Whale accumulating ${currentPercentage.toFixed(4)}% of supply`;
+      } else if (trend.signal === 'distributing') {
+        confidence -= 15;
+        reason += ` | Whale distributing ${Math.abs(trend.changePercent).toFixed(4)}% of supply`;
+      }
+    }
 
     if (exchangeBound.length > 0 && totalNewWhaleValue > 5_000_000) {
       direction = 'bearish';
-      confidence = 40;
-      reason = `${exchangeBound.length} new whale(s) moved $${(totalNewWhaleValue / 1_000_000).toFixed(1)}M to exchanges - potential sell pressure from unknown entities`;
+      confidence += 40;
+      reason = `${exchangeBound.length} new whale(s) moved $${(totalNewWhaleValue / 1_000_000).toFixed(1)}M to exchanges - potential sell pressure from unknown entities` + reason;
     } else if (coldBound.length > 0 && totalNewWhaleValue > 5_000_000) {
       direction = 'bullish';
-      confidence = 30;
-      reason = `${coldBound.length} new whale(s) accumulated $${(totalNewWhaleValue / 1_000_000).toFixed(1)}M - new smart money entering`;
+      confidence += 30;
+      reason = `${coldBound.length} new whale(s) accumulated $${(totalNewWhaleValue / 1_000_000).toFixed(1)}M - new smart money entering` + reason;
     } else {
-      reason = `${newWhales.length} new whale(s) detected moving $${(totalNewWhaleValue / 1_000_000).toFixed(1)}M - monitoring for patterns`;
+      reason = `${newWhales.length} new whale(s) detected moving $${(totalNewWhaleValue / 1_000_000).toFixed(1)}M - monitoring for patterns` + reason;
     }
 
     return {
       direction,
-      confidence,
+      confidence: Math.min(Math.abs(confidence), 100),
       reason,
       relatedTransfers: newWhales,
       timestamp: Date.now(),
+      supplyImpact,
     };
   }
 
