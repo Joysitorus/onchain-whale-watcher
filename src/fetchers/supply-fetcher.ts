@@ -10,6 +10,9 @@ interface SupplyCache {
 export class SupplyFetcher {
   private cache: Map<string, SupplyCache> = new Map();
   private cacheTtlMs = 3_600_000; // 1 hour
+  // P3-4: Rate limiting - 1 second between CoinGecko requests
+  private lastRequestTime = 0;
+  private readonly minRequestIntervalMs = 1000;
 
   // CoinGecko IDs per chain native token
   private readonly nativeCoinIds: Record<number, string> = {
@@ -33,6 +36,15 @@ export class SupplyFetcher {
     'OP': { address: '0x4200000000000000000000000000000000000042', chainId: 10 },
   };
 
+  private async rateLimitAndWait(): Promise<void> {
+    const now = Date.now();
+    const timeSinceLastRequest = now - this.lastRequestTime;
+    if (timeSinceLastRequest < this.minRequestIntervalMs) {
+      await new Promise(resolve => setTimeout(resolve, this.minRequestIntervalMs - timeSinceLastRequest));
+    }
+    this.lastRequestTime = Date.now();
+  }
+
   async getNativeTokenSupply(chainId: number): Promise<{ total: number; circulating: number; totalUsd: number } | null> {
     const coinId = this.nativeCoinIds[chainId];
     if (!coinId) return null;
@@ -44,6 +56,8 @@ export class SupplyFetcher {
     }
 
     try {
+      // P3-4: Rate limit before CoinGecko request
+      await this.rateLimitAndWait();
       const { data } = await axios.get(
         `https://api.coingecko.com/api/v3/coins/${coinId}?localization=false&tickers=false&community_data=false&developer_data=false`,
         { timeout: 5000 }
@@ -78,6 +92,8 @@ export class SupplyFetcher {
 
     // Try CoinGecko search for the token
     try {
+      // P3-4: Rate limit before CoinGecko request
+      await this.rateLimitAndWait();
       const { data: searchData } = await axios.get(
         `https://api.coingecko.com/api/v3/search?query=${tokenSymbol}`,
         { timeout: 5000 }
@@ -88,6 +104,8 @@ export class SupplyFetcher {
       );
 
       if (coin) {
+        // P3-4: Rate limit before second CoinGecko request
+        await this.rateLimitAndWait();
         const { data } = await axios.get(
           `https://api.coingecko.com/api/v3/coins/${coin.id}?localization=false&tickers=false&community_data=false&developer_data=false`,
           { timeout: 5000 }
