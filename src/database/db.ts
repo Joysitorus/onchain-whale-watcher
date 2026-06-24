@@ -624,6 +624,8 @@ export class Database {
   }
 
   private mapTransferRow(row: any): MonitoredTransfer {
+    // P2-12: Use chain's native token instead of hardcoded 'ETH'
+    const chain = config.chains.find(c => c.chainId === row.chain_id);
     return {
       hash: row.hash,
       chainId: row.chain_id,
@@ -635,7 +637,7 @@ export class Database {
       toLabel: row.to_label,
       toType: row.to_type,
       valueUsd: parseFloat(row.value_usd),
-      token: row.token || 'ETH',
+      token: row.token || chain?.nativeToken || 'ETH',
       significance: row.significance,
       timestamp: row.timestamp,
       blockNumber: row.block_number || 0,
