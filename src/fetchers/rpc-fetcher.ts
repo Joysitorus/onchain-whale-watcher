@@ -11,6 +11,9 @@ export class RpcFetcher {
   private priceFetcher = new PriceFetcher();
   private useProviderManager: boolean;
 
+  // P3-1: Reorg-safe depth - skip recent N blocks to avoid reorganized blocks
+  private readonly REORG_SAFE_DEPTH = 12; // ~2.5 minutes on Ethereum (12s blocks)
+
   constructor(private labelDb: LabelDatabase) {
     this.useProviderManager = config.rpcProviderRotation && config.infuraKeys.length > 1;
     
@@ -42,9 +45,11 @@ export class RpcFetcher {
       if (!provider) return [];
 
       const latestBlock = await provider.getBlockNumber();
+      // P3-1: Skip recent blocks that might be reorganized
+      const safeLatestBlock = latestBlock - this.REORG_SAFE_DEPTH;
 
       // P2-4: Batch fetch blocks in parallel instead of sequentially
-      const blockNums = Array.from({ length: count }, (_, i) => latestBlock - i);
+      const blockNums = Array.from({ length: count }, (_, i) => safeLatestBlock - i);
       const blocks = await Promise.all(
         blockNums.map(num => provider!.getBlock(num, true).catch(() => null))
       );
@@ -168,12 +173,14 @@ export class RpcFetcher {
       if (!provider) return [];
 
       const latestBlock = await provider.getBlockNumber();
+      // P3-1: Skip recent blocks that might be reorganized
+      const safeLatestBlock = latestBlock - this.REORG_SAFE_DEPTH;
       const transactions: Transaction[] = [];
       const addrLower = address.toLowerCase();
       const priceUsd = await this.priceFetcher.getUsdPrice(chain.chainId);
 
       // P2-4: Batch fetch blocks in parallel (20 blocks max, stop when limit reached)
-      const blockNums = Array.from({ length: 20 }, (_, i) => latestBlock - i);
+      const blockNums = Array.from({ length: 20 }, (_, i) => safeLatestBlock - i);
       const blocks = await Promise.all(
         blockNums.map(num => provider!.getBlock(num, true).catch(() => null))
       );
