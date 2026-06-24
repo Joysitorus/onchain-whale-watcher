@@ -84,16 +84,17 @@ export class WhaleTracker {
     const followUp: MonitoredTransfer[] = [];
     const trackedWhales = await this.db.getTrackedWhales(10);
 
-    for (const whale of trackedWhales) {
-      const chain = config.chains.find(c => c.chainId === whale.chain_id);
-      if (!chain || !chain.rpcUrl) continue;
+    // P3-7: Parallelize RPC calls for tracked whales
+    const whaleHistories = await Promise.all(
+      trackedWhales.map(async (whale) => {
+        const chain = config.chains.find(c => c.chainId === whale.chain_id);
+        if (!chain || !chain.rpcUrl) return { whale, history: [] };
+        const history = await this.rpcFetcher.getAddressHistory(chain, whale.address, 5);
+        return { whale, history };
+      })
+    );
 
-      const history = await this.rpcFetcher.getAddressHistory(
-        chain,
-        whale.address,
-        5
-      );
-
+    for (const { whale, history } of whaleHistories) {
       for (const tx of history) {
         if (tx.valueUsd < config.minTxValueUsd) continue;
 
