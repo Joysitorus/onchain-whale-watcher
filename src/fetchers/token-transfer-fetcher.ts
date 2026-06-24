@@ -90,6 +90,9 @@ export class TokenTransferFetcher {
     const decimals = tokenInfo.decimals;
     const BLOCK_STEP = 2000;
 
+    // Collect all logs first, then batch block lookups (P2-3 fix)
+    const allLogs: { log: RawLog; blockNum: number }[] = [];
+
     for (let start = fromBlock; start <= toBlock; start += BLOCK_STEP) {
       const end = Math.min(start + BLOCK_STEP - 1, toBlock);
 
@@ -101,87 +104,92 @@ export class TokenTransferFetcher {
           toBlock: '0x' + end.toString(16),
         }]) as RawLog[];
 
+
         for (const log of logs) {
-          const fromAddr = '0x' + log.topics[1].slice(26).toLowerCase();
-          const toAddr = '0x' + log.topics[2].slice(26).toLowerCase();
-          const rawAmount = BigInt(log.data);
-          const amount = Number(rawAmount) / Math.pow(10, decimals);
-
-          if (amount <= 0) continue;
-
-          const isWatched = watchedAddresses.length === 0 ||
-            watchedAddresses.includes(fromAddr) ||
-            watchedAddresses.includes(toAddr);
-
-          if (!isWatched) continue;
-
-          // Auto-discover unknown tokens
-          if (!tokenInfo.coingeckoId) {
-            const discovered = await this.tokenRegistry.fetchTokenInfo(tokenAddress, chain.chainId);
-            if (discovered) {
-              tokenInfo = discovered;
-            }
-          }
-
-          const tokenPriceUsd = await this.getTokenPriceUsd(tokenInfo.coingeckoId);
-          const amountUsd = amount * tokenPriceUsd;
-
-          if (amountUsd < 10000) continue;
-
-          const block = await provider.getBlock(parseInt(log.blockNumber, 16));
-
-          const fromLabel = this.getAddressLabel(fromAddr);
-          const toLabel = this.getAddressLabel(toAddr);
-
-          const whaleAddr = watchedAddresses.includes(fromAddr) ? fromAddr :
-                           watchedAddresses.includes(toAddr) ? toAddr : fromAddr;
-          const isWhaleSender = watchedAddresses.includes(fromAddr);
-
-          purchases.push({
-            hash: log.transactionHash,
-            chainId: chain.chainId,
-            chainName: chain.name,
-            tokenAddress: tokenAddress.toLowerCase(),
-            tokenSymbol: tokenInfo.symbol,
-            tokenName: tokenInfo.name,
-            tokenDecimals: decimals,
-            amount: amount.toString(),
-            amountUsd,
-            whaleAddress: whaleAddr,
-            whaleLabel: isWhaleSender ? fromLabel : toLabel,
-            whaleType: 'whale',
-            counterparty: isWhaleSender ? toAddr : fromAddr,
-            counterpartyLabel: isWhaleSender ? toLabel : fromLabel,
-            counterpartyType: this.guessCounterpartyType(isWhaleSender ? toAddr : fromAddr, chain.chainId),
-            timestamp: (block?.timestamp || Math.floor(Date.now() / 1000)) * 1000,
-            blockNumber: parseInt(log.blockNumber, 16),
-            direction: isWhaleSender ? 'sell' : 'buy',
-          });
+          const blockNum = parseInt(log.blockNumber, 16);
+          allLogs.push({ log, blockNum });
         }
       } catch (err: any) {
-        // Log failed chunks for debugging
         console.warn(`[TokenFetcher] Failed to fetch chunk ${start}-${end} for ${tokenInfo.symbol} on ${chain.name}: ${err.message}`);
       }
     }
 
-    return purchases;
-  }
-
-  private async getTokenPriceUsd(coingeckoId?: string): Promise<number> {
-    if (!coingeckoId) return 0;
-    try {
-      // Use the shared price fetcher's axios instance with rate limiting
-      const { data } = await axios.get(
-        `https://api.coingecko.com/api/v3/simple/price?ids=${coingeckoId}&vs_currencies=usd`,
-        { timeout: 5000 }
+    // Batch fetch unique blocks (P2-3 fix: avoid N+1 queries)
+    const uniqueBlockNums = [...new Set(allLogs.map(l => l.blockNum))];
+    const blockCache = new Map<number, any>();
+    
+    // Fetch blocks in parallel batches of 5
+    for (let i = 0; i < uniqueBlockNums.length; i += 5) {
+      const batch = uniqueBlockNums.slice(i, i + 5);
+      const blocks = await Promise.all(
+        batch.map(num => provider.getBlock(num).catch(() => null))
       );
-      return data[coingeckoId]?.usd || 0;
-    } catch (err: any) {
-      if (err?.response?.status === 429) {
-        console.warn(`[TokenFetcher] CoinGecko rate limited for ${coingeckoId}`);
-      }
-      return 0;
+      blocks.forEach((block, idx) => {
+        if (block) blockCache.set(batch[idx], block);
+      });
     }
+
+    // Process logs with cached blocks
+    for (const { log, blockNum } of allLogs) {
+      const fromAddr = '0x' + log.topics[1].slice(26).toLowerCase();
+      const toAddr = '0x' + log.topics[2].slice(26).toLowerCase();
+      const rawAmount = BigInt(log.data);
+      const amount = Number(rawAmount) / Math.pow(10, decimals);
+
+      if (amount <= 0) continue;
+
+      const isWatched = watchedAddresses.length === 0 ||
+        watchedAddresses.includes(fromAddr) ||
+        watchedAddresses.includes(toAddr);
+
+      if (!isWatched) continue;
+
+      // Auto-discover unknown tokens
+      if (!tokenInfo.coingeckoId) {
+        const discovered = await this.tokenRegistry.fetchTokenInfo(tokenAddress, chain.chainId);
+        if (discovered) {
+          tokenInfo = discovered;
+        }
+      }
+
+      // P2-6 fix: Use shared PriceFetcher instead of duplicate CoinGecko client
+      const tokenPriceUsd = await this.priceFetcher.getTokenPriceByCoinId(tokenInfo.coingeckoId || '');
+      const amountUsd = amount * tokenPriceUsd;
+
+      if (amountUsd < 10000) continue;
+
+      const block = blockCache.get(blockNum);
+
+      const fromLabel = this.getAddressLabel(fromAddr);
+      const toLabel = this.getAddressLabel(toAddr);
+
+      const whaleAddr = watchedAddresses.includes(fromAddr) ? fromAddr :
+                       watchedAddresses.includes(toAddr) ? toAddr : fromAddr;
+      const isWhaleSender = watchedAddresses.includes(fromAddr);
+
+      purchases.push({
+        hash: log.transactionHash,
+        chainId: chain.chainId,
+        chainName: chain.name,
+        tokenAddress: tokenAddress.toLowerCase(),
+        tokenSymbol: tokenInfo.symbol,
+        tokenName: tokenInfo.name,
+        tokenDecimals: decimals,
+        amount: amount.toString(),
+        amountUsd,
+        whaleAddress: whaleAddr,
+        whaleLabel: isWhaleSender ? fromLabel : toLabel,
+        whaleType: 'whale',
+        counterparty: isWhaleSender ? toAddr : fromAddr,
+        counterpartyLabel: isWhaleSender ? toLabel : fromLabel,
+        counterpartyType: this.guessCounterpartyType(isWhaleSender ? toAddr : fromAddr, chain.chainId),
+        timestamp: (block?.timestamp || Math.floor(Date.now() / 1000)) * 1000,
+        blockNumber: blockNum,
+        direction: isWhaleSender ? 'sell' : 'buy',
+      });
+    }
+
+    return purchases;
   }
 
   private getAddressLabel(address: string): string {
