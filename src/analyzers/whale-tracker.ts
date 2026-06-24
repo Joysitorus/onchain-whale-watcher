@@ -20,8 +20,6 @@ export class WhaleTracker {
   private newlyIdentified: MonitoredTransfer[] = [];
   private followUpResults: MonitoredTransfer[] = [];
   private supplyFetcher: SupplyFetcher;
-  private walletHoldings: Map<string, number> = new Map(); // key: `${address}:${chainId}`, value: USD
-  private previousPercentages: Map<string, number> = new Map(); // key: `${address}:${chainId}`, value: percentage
 
   constructor(
     private labelDb: LabelDatabase,
@@ -177,27 +175,27 @@ export class WhaleTracker {
     // Calculate supply impact for native tokens
     const supplyData = await this.supplyFetcher.getNativeTokenSupply(topWhale.chainId);
     if (supplyData) {
-      const holdingsKey = `${whaleAddr}:${topWhale.chainId}`;
-      const currentHoldings = this.walletHoldings.get(holdingsKey) || 0;
-      const newHoldings = currentHoldings + topWhale.valueUsd;
-      this.walletHoldings.set(holdingsKey, newHoldings);
+      // Load state from database (persists across restarts)
+      const dbState = await this.db.getWhaleState(whaleAddr, topWhale.chainId);
+      const currentHoldings = (dbState?.holdingsUsd || 0) + topWhale.valueUsd;
 
       const tokenPrice = supplyData.circulating > 0 ? supplyData.totalUsd / supplyData.circulating : 0;
       const currentPercentage = this.supplyFetcher.calculateSupplyPercentage(
-        newHoldings, tokenPrice, supplyData.circulating
+        currentHoldings, tokenPrice, supplyData.circulating
       );
 
-      const prevPercentage = this.previousPercentages.get(holdingsKey) || 0;
+      const prevPercentage = dbState?.previousPercentage || 0;
       const trend = this.supplyFetcher.getAccumulationSignal(currentPercentage, prevPercentage);
 
-      this.previousPercentages.set(holdingsKey, currentPercentage);
+      // Persist state to database
+      await this.db.updateWhaleState(whaleAddr, topWhale.chainId, currentHoldings, currentPercentage);
 
       supplyImpact = {
         tokenSymbol: config.chains.find(c => c.chainId === topWhale.chainId)?.nativeToken || 'TOKEN',
         chainId: topWhale.chainId,
         walletAddress: whaleAddr,
         walletLabel: topWhale.fromLabel.startsWith('Whale ') ? topWhale.fromLabel : topWhale.toLabel,
-        holdingsUsd: newHoldings,
+        holdingsUsd: currentHoldings,
         totalSupplyUsd: supplyData.totalUsd,
         supplyPercentage: currentPercentage,
         previousPercentage: prevPercentage,
