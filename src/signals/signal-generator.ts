@@ -8,6 +8,23 @@ export class SignalGenerator {
     const reasons: string[] = [];
     const relatedTransfers: MonitoredTransfer[] = [];
 
+    // P2-5: Time decay factor - older transfers contribute less to confidence
+    // Half-life of 5 minutes: after 5 min, influence is halved; after 10 min, quarter
+    const HALF_LIFE_MS = 5 * 60 * 1000;
+    const now = Date.now();
+
+    // Calculate weighted average age of transfers for time decay
+    let totalWeight = 0;
+    let weightedAge = 0;
+    for (const tx of recentTransfers) {
+      const ageMs = now - tx.timestamp;
+      const weight = Math.pow(0.5, ageMs / HALF_LIFE_MS);
+      totalWeight += weight;
+      weightedAge += weight * ageMs;
+    }
+    const avgAgeMs = totalWeight > 0 ? weightedAge / totalWeight : 0;
+    const timeDecayFactor = Math.pow(0.5, avgAgeMs / HALF_LIFE_MS);
+
     // Factor 1: Exchange flow direction
     if (analysis.netExchangeFlow < -5_000_000) {
       confidence += 30;
@@ -46,6 +63,9 @@ export class SignalGenerator {
         relatedTransfers.push(tx);
       }
     }
+
+    // P2-5: Apply time decay to final confidence
+    confidence = Math.round(confidence * timeDecayFactor);
 
     // Determine direction
     if (confidence >= 30) {
