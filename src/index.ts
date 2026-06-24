@@ -55,11 +55,13 @@ async function main() {
   }
   const tokenRegistry = new TokenRegistry(rpcUrls);
   const tokenTransferFetcher = new TokenTransferFetcher(tokenRegistry);
-  const tokenPurchaseDetector = new TokenPurchaseDetector(labelDb, new Database());
 
   // Init database
   const db = new Database();
   await db.connect();
+
+  // Use single database instance for all components
+  const tokenPurchaseDetector = new TokenPurchaseDetector(labelDb, db);
 
   // Init whale tracker
   const whaleTracker = new WhaleTracker(labelDb, db, rpcFetcher);
@@ -109,12 +111,23 @@ async function main() {
 
   console.log('[Init] Starting monitoring loop...\n');
 
+  // Poll concurrency guard - prevents overlapping poll cycles
+  let isPolling = false;
+
   async function poll() {
+    // Prevent concurrent poll execution
+    if (isPolling) {
+      console.log('[Poll] Previous cycle still running, skipping this tick');
+      return;
+    }
+    isPolling = true;
+
     const allTransfers: MonitoredTransfer[] = [];
     const pollStartTime = Date.now();
     const pollTimer = metrics.pollDuration.startTimer({ chain_id: 'all' });
 
-    // Step 1: Follow-up on previously tracked whales
+    try {
+      // Step 1: Follow-up on previously tracked whales
     const followUpTransfers = await whaleTracker.followUpTrackedWhales();
     allTransfers.push(...followUpTransfers);
 
@@ -353,13 +366,20 @@ async function main() {
 
     const stats = notifyManager.getStats();
     const pollDuration = Date.now() - pollStartTime;
-    pollTimer();
     
     // Record metrics
     metrics.txTotal.inc({ chain_id: 'all', chain_name: 'all', type: 'transfer' }, allTransfers.length);
     metrics.whaleDetected.inc({ chain_id: 'all', token: 'native' }, newWhales.length);
     
     console.log(`[Poll] Completed in ${(pollDuration / 1000).toFixed(1)}s | Notified: ${stats.deduped} unique txs, ${stats.whalesTracked} whales tracked`);
+    
+    } catch (err: any) {
+      console.error('[Poll] Error during poll cycle:', err.message);
+    } finally {
+      // Always reset polling flag and record timer
+      isPolling = false;
+      pollTimer();
+    }
   }
 
   // Initial poll
@@ -424,18 +444,33 @@ async function main() {
 
 // Global error handlers - prevent crashes from unhandled errors
 process.on('uncaughtException', (err) => {
-  console.error('[FATAL] Uncaught Exception:', err.message);
-  // Don't exit immediately - let the app continue if possible
-  // Only exit for truly fatal errors
-  if (err.message?.includes('ECONNRESET') || err.message?.includes('EPIPE')) {
+  const msg = err.message || String(err);
+  console.error('[FATAL] Uncaught Exception:', msg);
+
+  // WS/HTTP 429 errors are recoverable - just log and continue
+  // ethers.js WebSocketProvider can emit these before our error handler is attached
+  if (msg.includes('429') || msg.includes('rate limit') || msg.includes('Too Many Requests')) {
+    console.error('[FATAL] Rate limit error (recoverable), continuing...');
+    return; // Don't exit - let the provider rotation handle it
+  }
+
+  // Network errors are recoverable
+  if (msg.includes('ECONNRESET') || msg.includes('EPIPE') || msg.includes('ECONNREFUSED')) {
     console.error('[FATAL] Network error, exiting...');
     process.exit(1);
   }
+
+  // For other errors, log but don't exit immediately
+  console.error('[FATAL] Unexpected error, continuing...');
 });
 
 process.on('unhandledRejection', (reason: any) => {
-  console.error('[WARN] Unhandled Rejection:', reason?.message || reason);
-  // Don't crash - log and continue
+  const msg = reason?.message || String(reason);
+  // Don't log rate limit rejections - they're handled by provider rotation
+  if (msg.includes('429') || msg.includes('rate limit') || msg.includes('Too Many Requests')) {
+    return; // Silent - provider rotation handles this
+  }
+  console.error('[WARN] Unhandled Rejection:', msg);
 });
 
 main().catch(err => {
