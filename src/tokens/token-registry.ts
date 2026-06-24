@@ -318,12 +318,6 @@ export class TokenRegistry {
     }
   }
 
-  getTokenPrice(tokenAddress: string, chainId: number): number {
-    const token = this.getToken(tokenAddress, chainId);
-    if (!token?.coingeckoId) return 0;
-    return 0;
-  }
-
   getAllTokens(): TokenInfo[] {
     return Array.from(this.tokens.values());
   }
