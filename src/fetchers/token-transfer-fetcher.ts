@@ -1,8 +1,10 @@
 import { ethers } from 'ethers';
+import axios from 'axios';
 import { config, ChainConfig } from '../config';
 import { TokenRegistry, TRANSFER_TOPIC } from '../tokens/token-registry';
 import { PriceFetcher } from './price-fetcher';
 import { MonitoredTransfer, WhaleTokenPurchase } from '../types';
+import { rpcProviderManager } from './rpc-provider-manager';
 
 interface RawLog {
   address: string;
@@ -14,16 +16,29 @@ interface RawLog {
 }
 
 export class TokenTransferFetcher {
-  private providers: Map<number, ethers.JsonRpcProvider> = new Map();
+  private legacyProviders: Map<number, ethers.JsonRpcProvider> = new Map();
   private priceFetcher = new PriceFetcher();
   private fetchBlockCache: Map<number, number> = new Map();
+  private useProviderManager: boolean;
 
   constructor(private tokenRegistry: TokenRegistry) {
-    for (const chain of config.chains) {
-      if (chain.rpcUrl) {
-        this.providers.set(chain.chainId, new ethers.JsonRpcProvider(chain.rpcUrl));
+    this.useProviderManager = config.rpcProviderRotation && config.infuraKeys.length > 1;
+
+    if (!this.useProviderManager) {
+      // Fallback: create own providers (only when rotation is disabled)
+      for (const chain of config.chains) {
+        if (chain.rpcUrl) {
+          this.legacyProviders.set(chain.chainId, new ethers.JsonRpcProvider(chain.rpcUrl));
+        }
       }
     }
+  }
+
+  private async getProvider(chainId: number): Promise<ethers.JsonRpcProvider | null> {
+    if (this.useProviderManager) {
+      return rpcProviderManager.getProvider(chainId);
+    }
+    return this.legacyProviders.get(chainId) || null;
   }
 
   async fetchTokenTransfers(
@@ -32,7 +47,7 @@ export class TokenTransferFetcher {
     toBlock: number,
     watchedAddresses?: string[]
   ): Promise<WhaleTokenPurchase[]> {
-    const provider = this.providers.get(chain.chainId);
+    const provider = await this.getProvider(chain.chainId);
     if (!provider) return [];
 
     const purchases: WhaleTokenPurchase[] = [];
@@ -49,7 +64,8 @@ export class TokenTransferFetcher {
         );
         purchases.push(...tokenPurchases);
       } catch (err: any) {
-        // Skip tokens that fail
+        // Log failed token fetches for debugging
+        console.warn(`[TokenFetcher] Failed to fetch transfers for ${tokenInfo.symbol} (${tokenInfo.address}) on ${chain.name}: ${err.message}`);
       }
     }
 
@@ -63,7 +79,7 @@ export class TokenTransferFetcher {
     toBlock: number,
     watchedAddresses: string[]
   ): Promise<WhaleTokenPurchase[]> {
-    const provider = this.providers.get(chain.chainId);
+    const provider = await this.getProvider(chain.chainId);
     if (!provider) return [];
 
     let tokenInfo = this.tokenRegistry.getToken(tokenAddress, chain.chainId);
@@ -141,8 +157,9 @@ export class TokenTransferFetcher {
             direction: isWhaleSender ? 'sell' : 'buy',
           });
         }
-      } catch {
-        // Skip failed chunks
+      } catch (err: any) {
+        // Log failed chunks for debugging
+        console.warn(`[TokenFetcher] Failed to fetch chunk ${start}-${end} for ${tokenInfo.symbol} on ${chain.name}: ${err.message}`);
       }
     }
 
@@ -152,12 +169,16 @@ export class TokenTransferFetcher {
   private async getTokenPriceUsd(coingeckoId?: string): Promise<number> {
     if (!coingeckoId) return 0;
     try {
-      const { data } = await require('axios').get(
+      // Use the shared price fetcher's axios instance with rate limiting
+      const { data } = await axios.get(
         `https://api.coingecko.com/api/v3/simple/price?ids=${coingeckoId}&vs_currencies=usd`,
         { timeout: 5000 }
       );
       return data[coingeckoId]?.usd || 0;
-    } catch {
+    } catch (err: any) {
+      if (err?.response?.status === 429) {
+        console.warn(`[TokenFetcher] CoinGecko rate limited for ${coingeckoId}`);
+      }
       return 0;
     }
   }
@@ -184,13 +205,13 @@ export class TokenTransferFetcher {
   }
 
   async getLatestBlockNumber(chainId: number): Promise<number> {
-    const provider = this.providers.get(chainId);
+    const provider = await this.getProvider(chainId);
     if (!provider) return 0;
     return provider.getBlockNumber();
   }
 
   async fetchRecentPurchases(chain: ChainConfig, blocksBack: number = 100): Promise<WhaleTokenPurchase[]> {
-    const provider = this.providers.get(chain.chainId);
+    const provider = await this.getProvider(chain.chainId);
     if (!provider) return [];
 
     const latestBlock = await provider.getBlockNumber();
