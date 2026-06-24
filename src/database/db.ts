@@ -11,11 +11,14 @@ export class Database {
       // P2-11: Pool size and SSL configurable via env vars
       const poolMax = parseInt(process.env.DB_POOL_MAX || '5', 10);
       const sslMode = process.env.DB_SSL_MODE || 'require';
+      // P3-8: Query timeout in milliseconds (default: 30 seconds)
+      const queryTimeoutMs = parseInt(process.env.DB_QUERY_TIMEOUT_MS || '30000', 10);
       
       this.pool = new Pool({
         connectionString: config.databaseUrl,
         ssl: sslMode === 'require' ? { rejectUnauthorized: false } : undefined,
         max: poolMax,
+        statement_timeout: queryTimeoutMs,
       });
 
       this.pool.on('error', (err) => {
