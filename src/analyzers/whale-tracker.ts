@@ -110,6 +110,7 @@ export class WhaleTracker {
           valueUsd: tx.valueUsd,
           token: tx.token || this.getNativeToken(tx.chainId),
           timestamp: tx.timestamp,
+          blockNumber: tx.blockNumber || 0,
           significance: tx.valueUsd >= 10_000_000 ? 'critical' : tx.valueUsd >= 1_000_000 ? 'high' : 'medium',
         };
 

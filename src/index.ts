@@ -167,6 +167,7 @@ async function main() {
           valueUsd: tx.valueUsd,
           token: chain.nativeToken,
           timestamp: tx.timestamp,
+          blockNumber: tx.blockNumber || 0,
           significance: tx.valueUsd >= 10_000_000 ? 'critical' : tx.valueUsd >= 1_000_000 ? 'high' : 'medium',
         });
       }
@@ -331,6 +332,7 @@ async function main() {
           valueUsd: activity.netPositionUsd,
           token: activity.tokenSymbol,
           timestamp: Date.now(),
+          blockNumber: 0,
           significance: 'high',
         })) {
           await telegramReporter.sendTokenPurchaseAlert(activity);
@@ -347,6 +349,7 @@ async function main() {
             valueUsd: activity.netPositionUsd,
             token: activity.tokenSymbol,
             timestamp: Date.now(),
+            blockNumber: 0,
             significance: 'high',
           });
         }

@@ -73,7 +73,7 @@ export class TokenPurchaseDetector {
           counterpartyLabel: tx.toLabel,
           counterpartyType: tx.toType,
           timestamp: tx.timestamp,
-          blockNumber: 0,
+          blockNumber: tx.blockNumber || 0,
           direction: 'sell',
         });
       }
@@ -96,7 +96,7 @@ export class TokenPurchaseDetector {
           counterpartyLabel: tx.fromLabel,
           counterpartyType: tx.fromType,
           timestamp: tx.timestamp,
-          blockNumber: 0,
+          blockNumber: tx.blockNumber || 0,
           direction: 'buy',
         });
       }

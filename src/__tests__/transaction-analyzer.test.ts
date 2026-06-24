@@ -43,6 +43,7 @@ describe('TransactionAnalyzer', () => {
     valueUsd,
     token: 'ETH',
     timestamp: Date.now(),
+    blockNumber: 12345,
     significance: 'high',
   });
 

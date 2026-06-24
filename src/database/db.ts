@@ -634,6 +634,7 @@ export class Database {
       token: row.token || 'ETH',
       significance: row.significance,
       timestamp: row.timestamp,
+      blockNumber: row.block_number || 0,
     };
   }
 

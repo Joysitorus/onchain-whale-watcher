@@ -53,6 +53,7 @@ describe('Database', () => {
         valueUsd: 100000,
         token: 'ETH',
         timestamp: Date.now(),
+        blockNumber: 12345,
         significance: 'medium',
       };
 
@@ -81,6 +82,7 @@ describe('Database', () => {
           valueUsd: 1000000,
           token: 'ETH',
           timestamp: Date.now(),
+          blockNumber: 12345,
           significance: 'high',
         },
         {
@@ -96,6 +98,7 @@ describe('Database', () => {
           valueUsd: 2000000,
           token: 'ETH',
           timestamp: Date.now(),
+          blockNumber: 12346,
           significance: 'critical',
         },
       ];

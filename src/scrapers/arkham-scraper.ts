@@ -135,6 +135,7 @@ export class ArkhamScraper {
             valueUsd,
             token: defaultChain?.nativeToken || 'ETH',
             timestamp: Date.now(),
+            blockNumber: 0, // Arkham scraper doesn't provide block numbers
             significance: this.calcSignificance(valueUsd),
           });
         }

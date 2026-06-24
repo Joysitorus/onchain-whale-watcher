@@ -38,6 +38,7 @@ export interface MonitoredTransfer {
   valueUsd: number;
   token: string;
   timestamp: number;
+  blockNumber: number;
   significance: 'low' | 'medium' | 'high' | 'critical';
 }
 

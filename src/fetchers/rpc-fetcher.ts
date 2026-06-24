@@ -136,6 +136,7 @@ export class RpcFetcher {
           valueUsd,
           token: chain.nativeToken,
           timestamp: Date.now(),
+          blockNumber: 0, // Pending tx has no block number yet
           significance: 'high',
         });
       }
