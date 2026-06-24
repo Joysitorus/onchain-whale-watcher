@@ -115,6 +115,9 @@ async function main() {
   // Poll concurrency guard - prevents overlapping poll cycles
   let isPolling = false;
 
+  // P2-14: Poll timeout to prevent zombie state
+  const POLL_TIMEOUT_MS = parseInt(process.env.POLL_TIMEOUT_MS || '120000', 10); // 2 minutes default
+
   async function poll() {
     // Prevent concurrent poll execution
     if (isPolling) {
@@ -126,6 +129,12 @@ async function main() {
     const allTransfers: MonitoredTransfer[] = [];
     const pollStartTime = Date.now();
     const pollTimer = metrics.pollDuration.startTimer({ chain_id: 'all' });
+
+    // P2-14: Set up timeout to prevent zombie state
+    const pollTimeout = setTimeout(() => {
+      console.error(`[Poll] TIMEOUT after ${POLL_TIMEOUT_MS / 1000}s - forcing poll cycle to end`);
+      isPolling = false;
+    }, POLL_TIMEOUT_MS);
 
     try {
       // Step 1: Follow-up on previously tracked whales
@@ -380,7 +389,8 @@ async function main() {
     } catch (err: any) {
       console.error('[Poll] Error during poll cycle:', err.message);
     } finally {
-      // Always reset polling flag and record timer
+      // P2-14: Clear timeout and reset polling flag
+      clearTimeout(pollTimeout);
       isPolling = false;
       pollTimer();
     }
