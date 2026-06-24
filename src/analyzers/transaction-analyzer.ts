@@ -30,13 +30,29 @@ export interface TransferDirection {
 
 export class TransactionAnalyzer {
   private recentTransfers: MonitoredTransfer[] = [];
+  private seenHashes: Set<string> = new Set();
   private readonly historySize = 100;
 
   constructor(private labelDb: LabelDatabase) { }
 
   addTransfers(transfers: MonitoredTransfer[]): void {
-    this.recentTransfers.push(...transfers);
+    // Deduplicate by hash+chainId before adding
+    for (const tx of transfers) {
+      const key = `${tx.hash}:${tx.chainId}`;
+      if (!this.seenHashes.has(key)) {
+        this.seenHashes.add(key);
+        this.recentTransfers.push(tx);
+      }
+    }
+    
+    // Trim history to max size
     if (this.recentTransfers.length > this.historySize) {
+      const removed = this.recentTransfers.slice(0, this.recentTransfers.length - this.historySize);
+      // Remove hashes for trimmed entries
+      for (const tx of removed) {
+        const key = `${tx.hash}:${tx.chainId}`;
+        this.seenHashes.delete(key);
+      }
       this.recentTransfers = this.recentTransfers.slice(-this.historySize);
     }
   }
