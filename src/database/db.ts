@@ -8,10 +8,14 @@ export class Database {
 
   constructor() {
     if (config.databaseUrl) {
+      // P2-11: Pool size and SSL configurable via env vars
+      const poolMax = parseInt(process.env.DB_POOL_MAX || '5', 10);
+      const sslMode = process.env.DB_SSL_MODE || 'require';
+      
       this.pool = new Pool({
         connectionString: config.databaseUrl,
-        ssl: { rejectUnauthorized: false },
-        max: 5,
+        ssl: sslMode === 'require' ? { rejectUnauthorized: false } : undefined,
+        max: poolMax,
       });
 
       this.pool.on('error', (err) => {
