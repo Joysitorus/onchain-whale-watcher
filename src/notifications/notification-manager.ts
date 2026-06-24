@@ -19,6 +19,9 @@ export class NotificationManager {
   private readonly dedupTtlMs = 30 * 60 * 1000;
   private readonly signalCooldownMs = 10 * 60 * 1000;
   private readonly minConfidenceChange = 20;
+  // P3-11: Periodic cleanup interval
+  private lastCleanupTime = 0;
+  private readonly cleanupIntervalMs = 5 * 60 * 1000; // Every 5 minutes
 
   isTransferDuplicate(tx: MonitoredTransfer): boolean {
     if (!tx.hash) return false;
@@ -30,14 +33,30 @@ export class NotificationManager {
   markTransferSent(tx: MonitoredTransfer): void {
     if (!tx.hash) return;
     this.seenHashes.set(tx.hash, { hash: tx.hash, timestamp: Date.now() });
-    if (this.seenHashes.size > 500) {
-      const entries = Array.from(this.seenHashes.entries());
-      const cutoff = Date.now() - this.dedupTtlMs;
-      for (const [hash, data] of entries) {
-        if (data.timestamp < cutoff) {
-          this.seenHashes.delete(hash);
-        }
+    // P3-11: Trigger periodic cleanup
+    this.cleanupExpiredEntries();
+  }
+
+  // P3-11: Periodic cleanup of expired entries
+  private cleanupExpiredEntries(): void {
+    const now = Date.now();
+    if (now - this.lastCleanupTime < this.cleanupIntervalMs) return;
+    this.lastCleanupTime = now;
+
+    const cutoff = now - this.dedupTtlMs;
+    let cleaned = 0;
+    for (const [hash, data] of this.seenHashes) {
+      if (data.timestamp < cutoff) {
+        this.seenHashes.delete(hash);
+        cleaned++;
       }
+    }
+    // Also cleanup notifiedWhales (keep for 1 hour)
+    const whaleCutoff = now - 60 * 60 * 1000;
+    // notifiedWhales is a Set<string> without timestamps, so we can't clean it easily
+    // For now, just log the cleanup
+    if (cleaned > 0) {
+      console.log(`[NotifyManager] Cleaned ${cleaned} expired dedup entries`);
     }
   }
 
