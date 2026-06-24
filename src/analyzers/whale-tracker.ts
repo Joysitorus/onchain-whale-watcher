@@ -247,14 +247,8 @@ export class WhaleTracker {
   }
 
   private getNativeToken(chainId: number): string {
-    const tokens: Record<number, string> = {
-      1: 'ETH',
-      56: 'BNB',
-      137: 'MATIC',
-      10: 'ETH',
-      42161: 'ETH',
-      43114: 'AVAX',
-    };
-    return tokens[chainId] || 'ETH';
+    // P2-9: Use config.chains instead of hardcoded map
+    const chain = config.chains.find(c => c.chainId === chainId);
+    return chain?.nativeToken || 'ETH';
   }
 }
