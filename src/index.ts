@@ -54,7 +54,7 @@ async function main() {
     if (chain.rpcUrl) rpcUrls.set(chain.chainId, chain.rpcUrl);
   }
   const tokenRegistry = new TokenRegistry(rpcUrls);
-  const tokenTransferFetcher = new TokenTransferFetcher(tokenRegistry);
+  const tokenTransferFetcher = new TokenTransferFetcher(tokenRegistry, labelDb);
 
   // Init database
   const db = new Database();

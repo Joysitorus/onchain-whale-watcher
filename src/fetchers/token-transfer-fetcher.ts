@@ -5,6 +5,7 @@ import { TokenRegistry, TRANSFER_TOPIC } from '../tokens/token-registry';
 import { PriceFetcher } from './price-fetcher';
 import { MonitoredTransfer, WhaleTokenPurchase } from '../types';
 import { rpcProviderManager } from './rpc-provider-manager';
+import { LabelDatabase } from '../label-db';
 
 interface RawLog {
   address: string;
@@ -21,7 +22,7 @@ export class TokenTransferFetcher {
   private fetchBlockCache: Map<number, number> = new Map();
   private useProviderManager: boolean;
 
-  constructor(private tokenRegistry: TokenRegistry) {
+  constructor(private tokenRegistry: TokenRegistry, private labelDb?: LabelDatabase) {
     this.useProviderManager = config.rpcProviderRotation && config.infuraKeys.length > 1;
 
     if (!this.useProviderManager) {
@@ -151,7 +152,7 @@ export class TokenTransferFetcher {
             whaleType: 'whale',
             counterparty: isWhaleSender ? toAddr : fromAddr,
             counterpartyLabel: isWhaleSender ? toLabel : fromLabel,
-            counterpartyType: this.guessCounterpartyType(isWhaleSender ? toAddr : fromAddr),
+            counterpartyType: this.guessCounterpartyType(isWhaleSender ? toAddr : fromAddr, chain.chainId),
             timestamp: (block?.timestamp || Math.floor(Date.now() / 1000)) * 1000,
             blockNumber: parseInt(log.blockNumber, 16),
             direction: isWhaleSender ? 'sell' : 'buy',
@@ -188,7 +189,16 @@ export class TokenTransferFetcher {
     return short;
   }
 
-  private guessCounterpartyType(address: string): string {
+  private guessCounterpartyType(address: string, chainId?: number): string {
+    // Use LabelDatabase if available (comprehensive CEX/deFi labels)
+    if (this.labelDb && chainId) {
+      const labelType = this.labelDb.labelType(address, chainId);
+      if (labelType && labelType !== 'unknown') {
+        return labelType;
+      }
+    }
+
+    // Fallback to hardcoded list for backward compatibility
     const knownCex = [
       '0x28c6c06298d514db089934071355e5743bf21d60',
       '0x21a31ee1afc51d94c2efccaa2092ad1028285549',
