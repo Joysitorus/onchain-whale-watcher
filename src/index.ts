@@ -95,6 +95,13 @@ async function main() {
     await db.upsertAddress(entity.address, defaultChainId, entity.name, entity.entityType, 'arkham');
   }
 
+  // P3-5: Load whaleCounter from database for persistence across restarts
+  const savedWhaleCounter = await db.getWhaleCounter();
+  if (savedWhaleCounter > 0) {
+    labelDb.setWhaleCounter(savedWhaleCounter);
+    console.log(`[Init] Loaded whale counter: ${savedWhaleCounter}`);
+  }
+
   // Register job queue workers
   if (config.enableJobQueue) {
     queueService.registerWorker('whale-transactions', async (job) => {
@@ -379,6 +386,9 @@ async function main() {
 
     const stats = notifyManager.getStats();
     const pollDuration = Date.now() - pollStartTime;
+    
+    // P3-5: Persist whaleCounter to database
+    await db.setWhaleCounter(labelDb.getWhaleCounter());
     
     // Record metrics
     metrics.txTotal.inc({ chain_id: 'all', chain_name: 'all', type: 'transfer' }, allTransfers.length);

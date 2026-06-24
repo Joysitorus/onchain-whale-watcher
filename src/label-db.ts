@@ -26,6 +26,16 @@ export class LabelDatabase {
     this.loadKnownAddresses();
   }
 
+  // P3-5: Allow setting counter from database on startup
+  setWhaleCounter(value: number): void {
+    this.whaleCounter = value;
+  }
+
+  // P3-5: Get current counter value for persistence
+  getWhaleCounter(): number {
+    return this.whaleCounter;
+  }
+
   addDynamicLabel(address: string, chainId: number, name: string, type: AddressLabel['type'] = 'whale'): void {
     const key = `${address.toLowerCase()}:${chainId}`;
     this.dynamicLabels.set(key, { name, type });

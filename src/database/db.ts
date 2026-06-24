@@ -164,6 +164,15 @@ export class Database {
         CREATE INDEX IF NOT EXISTS idx_token_purchases_token ON whale_token_purchases(token_address, chain_id)
       `);
 
+      // P3-5: Key-value store for persisting state across restarts
+      await client.query(`
+        CREATE TABLE IF NOT EXISTS kv_store (
+          key VARCHAR(255) PRIMARY KEY,
+          value TEXT NOT NULL,
+          updated_at TIMESTAMP DEFAULT NOW()
+        )
+      `);
+
       await client.query('COMMIT');
       console.log('[DB] Migrations completed');
     } catch (err: any) {
@@ -648,6 +657,31 @@ export class Database {
     if (this.pool) {
       await this.pool.end();
       console.log('[DB] Disconnected');
+    }
+  }
+
+  // P3-5: Persist whaleCounter across restarts
+  async getWhaleCounter(): Promise<number> {
+    if (!this.connected || !this.pool) return 0;
+    try {
+      const result = await this.pool.query(
+        "SELECT value FROM kv_store WHERE key = 'whale_counter'"
+      );
+      return result.rows[0]?.value ? parseInt(result.rows[0].value, 10) : 0;
+    } catch {
+      return 0;
+    }
+  }
+
+  async setWhaleCounter(value: number): Promise<void> {
+    if (!this.connected || !this.pool) return;
+    try {
+      await this.pool.query(
+        "INSERT INTO kv_store (key, value) VALUES ('whale_counter', $1) ON CONFLICT (key) DO UPDATE SET value = $1",
+        [value.toString()]
+      );
+    } catch {
+      // Ignore errors - counter persistence is non-critical
     }
   }
 }
