@@ -59,7 +59,8 @@ export class Database {
           token VARCHAR(50),
           significance VARCHAR(20),
           timestamp BIGINT NOT NULL,
-          created_at TIMESTAMP DEFAULT NOW()
+          created_at TIMESTAMP DEFAULT NOW(),
+          UNIQUE(hash, chain_id)
         )
       `);
 
@@ -108,6 +109,8 @@ export class Database {
           total_volume_usd NUMERIC(20, 2) DEFAULT 0,
           last_active BIGINT,
           status VARCHAR(20) DEFAULT 'active',
+          holdings_usd NUMERIC(20, 2) DEFAULT 0,
+          previous_percentage NUMERIC(10, 8) DEFAULT 0,
           created_at TIMESTAMP DEFAULT NOW(),
           updated_at TIMESTAMP DEFAULT NOW(),
           UNIQUE(address, chain_id)
@@ -142,7 +145,8 @@ export class Database {
           direction VARCHAR(10),
           block_number BIGINT,
           timestamp BIGINT NOT NULL,
-          created_at TIMESTAMP DEFAULT NOW()
+          created_at TIMESTAMP DEFAULT NOW(),
+          UNIQUE(hash, chain_id, token_address)
         )
       `);
 
@@ -196,8 +200,45 @@ export class Database {
   }
 
   async saveTransfers(transfers: MonitoredTransfer[]): Promise<void> {
-    for (const tx of transfers) {
-      await this.saveTransfer(tx);
+    if (!this.connected || !this.pool || transfers.length === 0) return;
+
+    const BATCH_SIZE = 100;
+    
+    for (let i = 0; i < transfers.length; i += BATCH_SIZE) {
+      const batch = transfers.slice(i, i + BATCH_SIZE);
+      
+      try {
+        const values: any[] = [];
+        const placeholders = batch.map((tx, idx) => {
+          const base = idx * 12;
+          values.push(
+            tx.hash,
+            tx.chainId,
+            tx.chainName,
+            tx.from,
+            tx.fromLabel,
+            tx.fromType,
+            tx.to,
+            tx.toLabel,
+            tx.toType,
+            tx.valueUsd,
+            tx.significance,
+            tx.timestamp,
+          );
+          return `($${base + 1},$${base + 2},$${base + 3},$${base + 4},$${base + 5},$${base + 6},$${base + 7},$${base + 8},$${base + 9},$${base + 10},$${base + 11},$${base + 12})`;
+        }).join(',');
+
+        await this.pool.query(
+          `INSERT INTO monitored_transfers
+           (hash, chain_id, chain_name, from_address, from_label, from_type,
+            to_address, to_label, to_type, value_usd, significance, timestamp)
+           VALUES ${placeholders}
+           ON CONFLICT (hash, chain_id) DO NOTHING`,
+          values
+        );
+      } catch (err: any) {
+        console.warn('[DB] Failed to save transfers batch:', err.message);
+      }
     }
   }
 
@@ -298,40 +339,30 @@ export class Database {
   ): Promise<void> {
     if (!this.connected || !this.pool) return;
     try {
-      const existing = await this.pool.query(
-        `SELECT * FROM whale_tracking WHERE address = $1 AND chain_id = $2`,
-        [address.toLowerCase(), chainId]
-      );
-
-      if (existing.rows.length === 0) {
-        await this.pool.query(
-          `INSERT INTO whale_tracking
-           (address, chain_id, label, first_seen_tx, first_seen_value, first_seen_timestamp,
-            total_tx_count, total_volume_usd, last_active, status)
-           VALUES ($1,$2,$3,$4,$5,$6,1,$7,$8,'active')`,
-          [
-            address.toLowerCase(),
-            chainId,
-            data.label || null,
-            data.hash || null,
-            data.valueUsd || null,
-            data.timestamp || null,
-            data.valueUsd || 0,
-            data.timestamp || null,
-          ]
-        );
-      } else {
-        await this.pool.query(
-          `UPDATE whale_tracking SET
-           total_tx_count = total_tx_count + 1,
-           total_volume_usd = total_volume_usd + $3,
-           last_active = $4,
+      // Use atomic INSERT ... ON CONFLICT DO UPDATE to prevent race conditions
+      await this.pool.query(
+        `INSERT INTO whale_tracking
+         (address, chain_id, label, first_seen_tx, first_seen_value, first_seen_timestamp,
+          total_tx_count, total_volume_usd, last_active, status)
+         VALUES ($1,$2,$3,$4,$5,$6,1,$7,$8,'active')
+         ON CONFLICT (address, chain_id)
+         DO UPDATE SET
+           total_tx_count = whale_tracking.total_tx_count + 1,
+           total_volume_usd = whale_tracking.total_volume_usd + EXCLUDED.total_volume_usd,
+           last_active = EXCLUDED.last_active,
            status = 'active',
-           updated_at = NOW()
-           WHERE address = $1 AND chain_id = $2`,
-          [address.toLowerCase(), chainId, data.valueUsd || 0, data.timestamp || null]
-        );
-      }
+           updated_at = NOW()`,
+        [
+          address.toLowerCase(),
+          chainId,
+          data.label || null,
+          data.hash || null,
+          data.valueUsd || null,
+          data.timestamp || null,
+          data.valueUsd || 0,
+          data.timestamp || null,
+        ]
+      );
     } catch (err: any) {
       console.warn('[DB] Failed to upsert whale:', err.message);
     }
@@ -348,6 +379,42 @@ export class Database {
       return result.rows;
     } catch {
       return [];
+    }
+  }
+
+  async getWhaleState(address: string, chainId: number): Promise<{ holdingsUsd: number; previousPercentage: number } | null> {
+    if (!this.connected || !this.pool) return null;
+    try {
+      const result = await this.pool.query(
+        `SELECT holdings_usd, previous_percentage FROM whale_tracking
+         WHERE address = $1 AND chain_id = $2`,
+        [address.toLowerCase(), chainId]
+      );
+      if (result.rows.length > 0) {
+        return {
+          holdingsUsd: parseFloat(result.rows[0].holdings_usd) || 0,
+          previousPercentage: parseFloat(result.rows[0].previous_percentage) || 0,
+        };
+      }
+      return null;
+    } catch {
+      return null;
+    }
+  }
+
+  async updateWhaleState(address: string, chainId: number, holdingsUsd: number, previousPercentage: number): Promise<void> {
+    if (!this.connected || !this.pool) return;
+    try {
+      await this.pool.query(
+        `UPDATE whale_tracking SET
+         holdings_usd = $3,
+         previous_percentage = $4,
+         updated_at = NOW()
+         WHERE address = $1 AND chain_id = $2`,
+        [address.toLowerCase(), chainId, holdingsUsd, previousPercentage]
+      );
+    } catch (err: any) {
+      console.warn('[DB] Failed to update whale state:', err.message);
     }
   }
 
@@ -404,8 +471,53 @@ export class Database {
   }
 
   async saveTokenPurchases(purchases: WhaleTokenPurchase[]): Promise<void> {
-    for (const purchase of purchases) {
-      await this.saveTokenPurchase(purchase);
+    if (!this.connected || !this.pool || purchases.length === 0) return;
+
+    const BATCH_SIZE = 100;
+    
+    for (let i = 0; i < purchases.length; i += BATCH_SIZE) {
+      const batch = purchases.slice(i, i + BATCH_SIZE);
+      
+      try {
+        const values: any[] = [];
+        const placeholders = batch.map((p, idx) => {
+          const base = idx * 18;
+          values.push(
+            p.hash,
+            p.chainId,
+            p.chainName,
+            p.tokenAddress,
+            p.tokenSymbol,
+            p.tokenName,
+            p.tokenDecimals,
+            p.amount,
+            p.amountUsd,
+            p.whaleAddress.toLowerCase(),
+            p.whaleLabel,
+            p.whaleType,
+            p.counterparty,
+            p.counterpartyLabel,
+            p.counterpartyType,
+            p.direction,
+            p.blockNumber,
+            p.timestamp,
+          );
+          return `($${base + 1},$${base + 2},$${base + 3},$${base + 4},$${base + 5},$${base + 6},$${base + 7},$${base + 8},$${base + 9},$${base + 10},$${base + 11},$${base + 12},$${base + 13},$${base + 14},$${base + 15},$${base + 16},$${base + 17},$${base + 18})`;
+        }).join(',');
+
+        await this.pool.query(
+          `INSERT INTO whale_token_purchases
+           (hash, chain_id, chain_name, token_address, token_symbol, token_name,
+            token_decimals, amount, amount_usd, whale_address, whale_label,
+            whale_type, counterparty, counterparty_label, counterparty_type,
+            direction, block_number, timestamp)
+           VALUES ${placeholders}
+           ON CONFLICT (hash, chain_id, token_address) DO NOTHING`,
+          values
+        );
+      } catch (err: any) {
+        console.warn('[DB] Failed to save token purchases batch:', err.message);
+      }
     }
   }
 
