@@ -7,6 +7,8 @@ import { ArkhamEntity, MonitoredTransfer } from '../types';
 export class ArkhamScraper {
   private baseUrl: string;
   private sessionCookies: string = '';
+  private requestCount = 0;
+  private errorCount = 0;
 
   constructor(private labelDb: LabelDatabase) {
     this.baseUrl = config.arkhamBaseUrl;
@@ -14,7 +16,9 @@ export class ArkhamScraper {
 
   private async fetchPage(path: string): Promise<string> {
     try {
-      const { data } = await axios.get(`${this.baseUrl}${path}`, {
+      this.requestCount++;
+      const startTime = Date.now();
+      const { data, status } = await axios.get(`${this.baseUrl}${path}`, {
         headers: {
           'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
           'Accept': 'text/html,application/json',
@@ -23,11 +27,19 @@ export class ArkhamScraper {
         },
         timeout: 15000,
       });
+      const duration = Date.now() - startTime;
+      console.log(`[Arkham] Fetched ${path} in ${duration}ms (status: ${status})`);
       return data;
     } catch (err: any) {
-      console.warn(`[Arkham] Failed to fetch ${path}: ${err.message}`);
+      this.errorCount++;
+      const status = err.response?.status || 'unknown';
+      console.warn(`[Arkham] Failed to fetch ${path}: ${err.message} (status: ${status}, errors: ${this.errorCount}/${this.requestCount})`);
       return '';
     }
+  }
+
+  getStats(): { requests: number; errors: number } {
+    return { requests: this.requestCount, errors: this.errorCount };
   }
 
   async scrapeTopEntities(): Promise<ArkhamEntity[]> {
