@@ -42,11 +42,17 @@ export class RpcFetcher {
       if (!provider) return [];
 
       const latestBlock = await provider.getBlockNumber();
-      const transactions: Transaction[] = [];
 
-      for (let i = 0; i < count; i++) {
-        const blockNum = latestBlock - i;
-        const block = await provider.getBlock(blockNum, true);
+      // P2-4: Batch fetch blocks in parallel instead of sequentially
+      const blockNums = Array.from({ length: count }, (_, i) => latestBlock - i);
+      const blocks = await Promise.all(
+        blockNums.map(num => provider!.getBlock(num, true).catch(() => null))
+      );
+
+      const transactions: Transaction[] = [];
+      const priceUsd = await this.priceFetcher.getUsdPrice(chain.chainId);
+
+      for (const block of blocks) {
         if (!block || !block.transactions) continue;
 
         for (const tx of block.transactions) {
@@ -54,10 +60,9 @@ export class RpcFetcher {
           const txValue = txData.value ?? 0n;
           const valueEth = parseFloat(ethers.formatEther(txValue));
 
-          // Filter for significant transactions only
           if (valueEth < 1) continue;
 
-          let valueUsd = valueEth * (await this.priceFetcher.getUsdPrice(chain.chainId));
+          const valueUsd = valueEth * priceUsd;
 
           transactions.push({
             hash: txData.hash,
@@ -75,7 +80,6 @@ export class RpcFetcher {
         }
       }
 
-      // Report success
       if (this.useProviderManager && provider) {
         const responseTime = Date.now() - startTime;
         rpcProviderManager.reportSuccess(chain.chainId, provider._getConnection().url, responseTime);
@@ -83,7 +87,6 @@ export class RpcFetcher {
 
       return transactions;
     } catch (err: any) {
-      // Report failure
       if (this.useProviderManager && provider) {
         const isRateLimit = rpcProviderManager.isRateLimitError(err);
         rpcProviderManager.reportFailure(chain.chainId, provider._getConnection().url, isRateLimit);
@@ -107,6 +110,7 @@ export class RpcFetcher {
 
       const transfers: MonitoredTransfer[] = [];
       const txs: any[] = pendingBlock.transactions;
+      const priceUsd = await this.priceFetcher.getUsdPrice(chain.chainId);
 
       for (const tx of txs) {
         const from = (tx.from || '').toLowerCase();
@@ -117,7 +121,7 @@ export class RpcFetcher {
         const valueEth = parseFloat(ethers.formatEther(valueWei));
         if (valueEth < 10) continue;
 
-        const valueUsd = valueEth * (await this.priceFetcher.getUsdPrice(chain.chainId));
+        const valueUsd = valueEth * priceUsd;
 
         transfers.push({
           hash: tx.hash || '',
@@ -165,11 +169,17 @@ export class RpcFetcher {
       const latestBlock = await provider.getBlockNumber();
       const transactions: Transaction[] = [];
       const addrLower = address.toLowerCase();
+      const priceUsd = await this.priceFetcher.getUsdPrice(chain.chainId);
 
-      for (let i = 0; i < 20 && transactions.length < limit; i++) {
-        const blockNum = latestBlock - i;
-        const block = await provider.getBlock(blockNum, true);
+      // P2-4: Batch fetch blocks in parallel (20 blocks max, stop when limit reached)
+      const blockNums = Array.from({ length: 20 }, (_, i) => latestBlock - i);
+      const blocks = await Promise.all(
+        blockNums.map(num => provider!.getBlock(num, true).catch(() => null))
+      );
+
+      for (const block of blocks) {
         if (!block || !block.transactions) continue;
+        if (transactions.length >= limit) break;
 
         for (const tx of block.transactions) {
           const txData = tx as unknown as ethers.TransactionResponse;
@@ -180,7 +190,7 @@ export class RpcFetcher {
           const histTxValue = txData.value ?? 0n;
           const valueEth = parseFloat(ethers.formatEther(histTxValue));
           if (valueEth <= 0) continue;
-          const valueUsd = valueEth * (await this.priceFetcher.getUsdPrice(chain.chainId));
+          const valueUsd = valueEth * priceUsd;
 
           transactions.push({
             hash: txData.hash,
@@ -195,10 +205,11 @@ export class RpcFetcher {
             gasPrice: txData.gasPrice?.toString() || '0',
             gasUsed: '0',
           });
+
+          if (transactions.length >= limit) break;
         }
       }
 
-      // Report success
       if (this.useProviderManager && provider) {
         const responseTime = Date.now() - startTime;
         rpcProviderManager.reportSuccess(chain.chainId, provider._getConnection().url, responseTime);
@@ -206,7 +217,6 @@ export class RpcFetcher {
 
       return transactions;
     } catch (err: any) {
-      // Report failure
       if (this.useProviderManager && provider) {
         const isRateLimit = rpcProviderManager.isRateLimitError(err);
         rpcProviderManager.reportFailure(chain.chainId, provider._getConnection().url, isRateLimit);
