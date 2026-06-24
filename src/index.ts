@@ -38,10 +38,10 @@ async function main() {
   const consoleReporter = new ConsoleReporter();
   const notifyManager = new NotificationManager();
 
-  // Init new services
-  const cacheService = new CacheService();
-  const hybridConn = new HybridConnectionManager();
-  const queueService = new QueueService();
+  // P3-9: Conditionally instantiate services based on config
+  const cacheService = config.cacheEnabled ? new CacheService() : null;
+  const hybridConn = config.enableWebSocket ? new HybridConnectionManager() : null;
+  const queueService = config.enableJobQueue ? new QueueService() : null;
 
   // Start metrics server
   if (config.metricsEnabled) {
@@ -67,13 +67,15 @@ async function main() {
   const whaleTracker = new WhaleTracker(labelDb, db, rpcFetcher);
 
   // Start hybrid connection manager
-  await hybridConn.start();
+  if (hybridConn) {
+    await hybridConn.start();
 
-  // Log connection health status
-  const healthStatus = hybridConn.getHealthStatus();
-  for (const health of healthStatus) {
-    const chain = config.chains.find(c => c.chainId === health.chainId);
-    console.log(`[${chain?.name}] Mode: ${health.mode} | Connected: ${health.connected}`);
+    // Log connection health status
+    const healthStatus = hybridConn.getHealthStatus();
+    for (const health of healthStatus) {
+      const chain = config.chains.find(c => c.chainId === health.chainId);
+      console.log(`[${chain?.name}] Mode: ${health.mode} | Connected: ${health.connected}`);
+    }
   }
 
   // Init Telegram (if configured)
@@ -103,7 +105,7 @@ async function main() {
   }
 
   // Register job queue workers
-  if (config.enableJobQueue) {
+  if (queueService) {
     queueService.registerWorker('whale-transactions', async (job) => {
       const { transfers } = job.data;
       await db.saveTransfers(transfers);
@@ -161,11 +163,9 @@ async function main() {
 
       // Cache RPC blocks for 15 seconds
       const blockCacheKey = `blocks_${chain.chainId}`;
-      const txs = await cacheService.getOrSet(
-        blockCacheKey,
-        () => rpcFetcher.getLatestBlocks(chain, 3),
-        15000
-      );
+      const txs = cacheService
+        ? await cacheService.getOrSet(blockCacheKey, () => rpcFetcher.getLatestBlocks(chain, 3), 15000)
+        : await rpcFetcher.getLatestBlocks(chain, 3);
       
       for (const tx of txs || []) {
         if (tx.valueUsd < config.minTxValueUsd) continue;
@@ -199,11 +199,9 @@ async function main() {
         const cacheKey = `token_transfers_${chain.chainId}`;
         const fetchTimer = metrics.txFetchDuration.startTimer({ chain_id: chain.chainId.toString() });
         
-        let tokenPurchases = await cacheService.getOrSet(
-          cacheKey,
-          () => tokenTransferFetcher.fetchRecentPurchases(chain, 100),
-          30000 // 30 seconds cache
-        );
+        let tokenPurchases = cacheService
+          ? await cacheService.getOrSet(cacheKey, () => tokenTransferFetcher.fetchRecentPurchases(chain, 100), 30000)
+          : await tokenTransferFetcher.fetchRecentPurchases(chain, 100);
         
         fetchTimer();
         
@@ -216,7 +214,7 @@ async function main() {
         }
         
         // Add to job queue if enabled
-        if (config.enableJobQueue && tokenPurchases && tokenPurchases.length > 0) {
+        if (queueService && tokenPurchases && tokenPurchases.length > 0) {
           await queueService.addJob('token-purchases', {
             type: 'process',
             payload: { purchases: tokenPurchases },
@@ -243,7 +241,7 @@ async function main() {
     const exchangeMovements = await whaleTracker.detectExchangeMovement();
 
     // Step 6: Save to database (via job queue if enabled)
-    if (config.enableJobQueue && allTransfers.length > 0) {
+    if (queueService && allTransfers.length > 0) {
       await queueService.addJob('whale-transactions', {
         type: 'save',
         payload: { transfers: allTransfers },
@@ -414,25 +412,27 @@ async function main() {
 
   // Health status check every 5 minutes
   const healthIntervalId = setInterval(() => {
-    const healthStatus = hybridConn.getHealthStatus();
-    console.log('\n[Health] Connection status:');
-    for (const health of healthStatus) {
-      const chain = config.chains.find(c => c.chainId === health.chainId);
-      const lastUpdate = health.lastUpdate > 0 
-        ? `${Math.round((Date.now() - health.lastUpdate) / 1000)}s ago`
-        : 'never';
-      console.log(`  ${chain?.name}: ${health.mode} | Errors: ${health.errorCount} | Last: ${lastUpdate}`);
-    }
+    if (hybridConn) {
+      const healthStatus = hybridConn.getHealthStatus();
+      console.log('\n[Health] Connection status:');
+      for (const health of healthStatus) {
+        const chain = config.chains.find(c => c.chainId === health.chainId);
+        const lastUpdate = health.lastUpdate > 0 
+          ? `${Math.round((Date.now() - health.lastUpdate) / 1000)}s ago`
+          : 'never';
+        console.log(`  ${chain?.name}: ${health.mode} | Errors: ${health.errorCount} | Last: ${lastUpdate}`);
+      }
 
-    // Log WS provider rotation status if enabled
-    if (config.rpcProviderRotation && config.infuraKeys.length > 1) {
-      const providerStatus = rpcProviderManager.getStatus();
-      for (const status of providerStatus) {
-        if (status.wsProviders && status.wsProviders.length > 0) {
-          const chain = config.chains.find(c => c.chainId === status.chainId);
-          const activeWs = status.wsProviders.find(p => !p.inCooldown);
-          const cooldownCount = status.wsProviders.filter(p => p.inCooldown).length;
-          console.log(`  ${chain?.name} WS: ${status.wsProviders.length} providers | Active: ${activeWs?.name || 'none'} | In cooldown: ${cooldownCount}`);
+      // Log WS provider rotation status if enabled
+      if (config.rpcProviderRotation && config.infuraKeys.length > 1) {
+        const providerStatus = rpcProviderManager.getStatus();
+        for (const status of providerStatus) {
+          if (status.wsProviders && status.wsProviders.length > 0) {
+            const chain = config.chains.find(c => c.chainId === status.chainId);
+            const activeWs = status.wsProviders.find(p => !p.inCooldown);
+            const cooldownCount = status.wsProviders.filter(p => p.inCooldown).length;
+            console.log(`  ${chain?.name} WS: ${status.wsProviders.length} providers | Active: ${activeWs?.name || 'none'} | In cooldown: ${cooldownCount}`);
+          }
         }
       }
     }
@@ -445,9 +445,9 @@ async function main() {
     console.log(`\n[Agent] Received ${signal}, shutting down...`);
     clearInterval(intervalId);
     clearInterval(healthIntervalId);
-    await hybridConn.stop();
-    await queueService.disconnect();
-    await cacheService.disconnect();
+    if (hybridConn) await hybridConn.stop();
+    if (queueService) await queueService.disconnect();
+    if (cacheService) await cacheService.disconnect();
     await metrics.stopServer();
     await db.disconnect();
     process.exit(0);
