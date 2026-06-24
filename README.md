@@ -22,6 +22,7 @@ Agent untuk memonitor transaksi on-chain multi-chain, menganalisis pergerakan wh
 - **Multi-Provider Rotation** - Auto-rotate antara multiple Infura keys + fallback RPCs
 - **PostgreSQL** - Histori transaksi, sinyal, tracked whales, token purchases
 - **Telegram Notifications** - Alert real-time ke Telegram bot
+- **Unit Testing** - Jest testing framework dengan 13 unit tests
 
 ## Prerequisites
 
@@ -115,6 +116,15 @@ npm start
 
 # Development (auto-restart)
 npm run dev
+
+# Run unit tests
+npm test
+
+# Run unit tests in watch mode
+npm run test:watch
+
+# Run unit tests with coverage
+npm run test:coverage
 ```
 
 ## Struktur Project
@@ -153,8 +163,12 @@ src/
 │   └── arkham-scraper.ts          # Arkham Intelligence scraper
 ├── signals/
 │   └── signal-generator.ts        # Market signal generation
-└── notifications/
-    └── notification-manager.ts    # Notification deduplication
+├── notifications/
+│   └── notification-manager.ts    # Notification deduplication
+└── __tests__/
+    ├── db.test.ts                 # Database unit tests
+    ├── price-fetcher.test.ts      # PriceFetcher unit tests
+    └── transaction-analyzer.test.ts # TransactionAnalyzer unit tests
 
 data/
 └── known-addresses.json           # Pre-labelled addresses (exchange, cold/hot wallet, DeFi)
@@ -261,6 +275,47 @@ Transaksi besar dari address tak dikenal
   → Jika dana masuk exchange: flag bearish signal
 ```
 
+## Reliability & Testing
+
+### Poll Concurrency Guard
+Mencegah concurrent poll execution yang bisa menyebabkan duplicate notifications dan race conditions:
+- Menggunakan flag `isPolling` dengan try/finally
+- Jika poll cycle sebelumnya belum selesai, cycle berikutnya akan di-skip
+
+### Transfer Deduplication
+Mencegah transfer yang sama dihitung berkali-kali:
+- Deduplikasi berdasarkan `hash+chainId` sebelum analisis
+- Mencegah inflated metrics dan false signals
+
+### Batch Insert
+Optimasi database performance:
+- Multi-row INSERT dengan batch size 100
+- Mengurangi database round-trips
+
+### Atomic Upsert
+Mencegah race conditions di database:
+- `INSERT ... ON CONFLICT DO UPDATE` untuk whale_tracking
+- Unique constraints pada monitored_transfers dan whale_token_purchases
+
+### CoinGecko Rate Limiting
+Mencegah API rate limit errors:
+- 1 second minimum antar requests
+- Logging untuk rate limit errors
+
+### Unit Testing
+Jest testing framework dengan 13 unit tests:
+- Database operations (saveTransfers, upsertWhale, unique constraints)
+- PriceFetcher (caching, rate limiting, fallback)
+- TransactionAnalyzer (deduplication, analysis)
+
+```bash
+# Run tests
+npm test
+
+# Run tests with coverage
+npm run test:coverage
+```
+
 ### Token Purchase Tracking Flow
 
 ```
@@ -310,6 +365,16 @@ Tabel otomatis dibuat saat pertama kali jalan:
 - `known_addresses` - Address yang sudah dilabeli
 - `whale_tracking` - Data whale yang sedang di-track
 - `whale_token_purchases` - Token purchases oleh whale
+
+### Unique Constraints
+
+- `monitored_transfers`: `UNIQUE(hash, chain_id)`
+- `whale_token_purchases`: `UNIQUE(hash, chain_id, token_address)`
+
+### Whale Tracking Columns
+
+- `holdings_usd` - Total holdings whale dalam USD
+- `previous_percentage` - Persentase supply sebelumnya (untuk tracking akumulasi/distribusi)
 
 Query contoh:
 

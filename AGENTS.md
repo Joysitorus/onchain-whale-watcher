@@ -20,6 +20,15 @@ npm run build
 
 # Production mode
 npm start
+
+# Run unit tests
+npm test
+
+# Run unit tests in watch mode
+npm run test:watch
+
+# Run unit tests with coverage
+npm run test:coverage
 ```
 
 ## Project Structure
@@ -58,8 +67,12 @@ src/
 │   └── arkham-scraper.ts          # Arkham Intelligence scraper
 ├── signals/
 │   └── signal-generator.ts        # Market signal generation
-└── notifications/
-    └── notification-manager.ts    # Notification deduplication
+├── notifications/
+│   └── notification-manager.ts    # Notification deduplication
+└── __tests__/
+    ├── db.test.ts                 # Database unit tests
+    ├── price-fetcher.test.ts      # PriceFetcher unit tests
+    └── transaction-analyzer.test.ts # TransactionAnalyzer unit tests
 
 data/
 └── known-addresses.json           # Pre-labeled addresses (exchange, cold/hot wallet, DeFi)
@@ -168,6 +181,18 @@ Strategi ini memastikan:
 | `known_addresses` | Labeled addresses |
 | `whale_tracking` | Tracked whale wallets |
 | `whale_token_purchases` | Token purchases by whales |
+
+## Reliability Features
+
+| Feature | Description |
+|---------|-------------|
+| Poll Concurrency Guard | Prevents overlapping poll cycles with `isPolling` flag |
+| Transfer Deduplication | Deduplicates transfers by `hash+chainId` before analysis |
+| Batch Insert | Multi-row INSERT for better database performance |
+| Atomic Upsert | `INSERT ... ON CONFLICT DO UPDATE` prevents race conditions |
+| Unique Constraints | `UNIQUE(hash, chain_id)` on transfers, `UNIQUE(hash, chain_id, token_address)` on purchases |
+| CoinGecko Rate Limiting | 1 second between API requests to prevent rate limits |
+| Whale State Persistence | `holdings_usd` and `previous_percentage` stored in database |
 
 ## Common Tasks
 
@@ -284,6 +309,9 @@ ENABLE_JOB_QUEUE=true
 | `@types/node` | ^20.0.0 | Node.js type definitions |
 | `@types/pg` | ^8.20.0 | PostgreSQL type definitions |
 | `@types/ws` | ^8.18.1 | WebSocket type definitions |
+| `jest` | ^29.7.0 | Testing framework |
+| `ts-jest` | ^29.2.0 | TypeScript support for Jest |
+| `@types/jest` | ^29.5.0 | Jest type definitions |
 
 ## TypeScript Configuration
 
