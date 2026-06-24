@@ -4,6 +4,7 @@ export class CacheService {
   private client: RedisClientType | null = null;
   private connected: boolean = false;
   private defaultTtlMs: number = 300_000; // 5 minutes
+  private inFlightPromises: Map<string, Promise<any>> = new Map(); // Cache stampede protection
 
   constructor() {
     this.init();
@@ -98,11 +99,28 @@ export class CacheService {
     const cached = await this.get<T>(key);
     if (cached !== null) return cached;
 
-    const value = await fetchFn();
-    if (value !== null && value !== undefined) {
-      await this.set(key, value, ttlMs);
+    // Cache stampede protection: if a fetch is already in progress for this key,
+    // wait for the existing promise instead of starting a new one
+    if (this.inFlightPromises.has(key)) {
+      return this.inFlightPromises.get(key) as Promise<T>;
     }
-    return value;
+
+    // Start a new fetch and store the promise
+    const fetchPromise = fetchFn().then(async (value) => {
+      if (value !== null && value !== undefined) {
+        await this.set(key, value, ttlMs);
+      }
+      // Remove from in-flight map after completion
+      this.inFlightPromises.delete(key);
+      return value;
+    }).catch((err) => {
+      // Remove from in-flight map on error
+      this.inFlightPromises.delete(key);
+      throw err;
+    });
+
+    this.inFlightPromises.set(key, fetchPromise);
+    return fetchPromise;
   }
 
   async increment(key: string, ttlMs?: number): Promise<number> {
