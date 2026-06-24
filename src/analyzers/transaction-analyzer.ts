@@ -31,7 +31,8 @@ export interface TransferDirection {
 export class TransactionAnalyzer {
   private recentTransfers: MonitoredTransfer[] = [];
   private seenHashes: Set<string> = new Set();
-  private readonly historySize = 100;
+  // P3-6: Configurable history size via env var
+  private readonly historySize = parseInt(process.env.ANALYSIS_HISTORY_SIZE || '100', 10);
 
   constructor(private labelDb: LabelDatabase) { }
 

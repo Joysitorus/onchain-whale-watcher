@@ -32,7 +32,8 @@ interface WhaleTokenActivity {
 
 export class TokenPurchaseDetector {
   private recentPurchases: WhaleTokenPurchase[] = [];
-  private readonly maxHistory = 500;
+  // P3-6: Configurable history size via env var
+  private readonly maxHistory = parseInt(process.env.TOKEN_PURCHASE_HISTORY_SIZE || '500', 10);
 
   constructor(
     private labelDb: LabelDatabase,
