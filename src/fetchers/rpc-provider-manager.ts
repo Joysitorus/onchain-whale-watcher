@@ -1,5 +1,30 @@
 import { ethers } from 'ethers';
 
+/**
+ * StableJsonRpcProvider - Custom provider that suppresses the "failed to detect network" retry spam.
+ * When ethers.js v6 cannot detect the network (e.g., rate limited), it retries every 1 second
+ * indefinitely, flooding logs. This subclass overrides _detectNetwork to return the preset
+ * network on failure instead of retrying forever.
+ */
+class StableJsonRpcProvider extends ethers.JsonRpcProvider {
+  constructor(url: string, network: ethers.Networkish) {
+    super(url, network);
+  }
+
+  async _detectNetwork(): Promise<ethers.Network> {
+    try {
+      return await super._detectNetwork();
+    } catch {
+      // On failure, return the preset network without retrying
+      // This prevents the "failed to detect network and cannot start up; retry in 1s" spam
+      if (this._network) {
+        return this._network;
+      }
+      throw new Error('Network detection failed (no preset available)');
+    }
+  }
+}
+
 interface ProviderConfig {
   url: string;
   name: string;
@@ -54,6 +79,34 @@ export class RpcProviderManager {
 
   constructor() {
     this.initializePools();
+    this.logChainKeyDistribution();
+  }
+
+  private logChainKeyDistribution(): void {
+    const infuraKeys = this.getInfuraKeys();
+    console.log('[RPC Provider] Chain-Key Distribution Strategy:');
+    console.log('================================================');
+    
+    for (let keyIndex = 0; keyIndex < infuraKeys.length; keyIndex++) {
+      const assignedChains: string[] = [];
+      
+      for (const [chainId] of this.pools) {
+        if (this.getInfuraKeyIndexForChain(chainId) === keyIndex) {
+          assignedChains.push(this.getChainName(chainId));
+        }
+      }
+      
+      if (assignedChains.length > 0) {
+        console.log(`  Infura Key ${keyIndex + 1}: ${assignedChains.join(', ')}`);
+      }
+    }
+    
+    // Check for BSC (no Infura)
+    if (this.pools.has(56)) {
+      console.log(`  BSC: Uses public RPCs only (Infura not supported)`);
+    }
+    
+    console.log('================================================');
   }
 
   private initializePools(): void {
@@ -155,22 +208,47 @@ export class RpcProviderManager {
     }
   }
 
+  /**
+   * Get the assigned Infura key index for a specific chain.
+   * Each key handles only 2 chains to reduce burst requests:
+   * - Key 1: Ethereum (1), Polygon (137)
+   * - Key 2: Optimism (10), Arbitrum (42161)
+   * - Key 3: Avalanche (43114)
+   * 
+   * Returns -1 if the chain doesn't use Infura (e.g., BSC).
+   */
+  private getInfuraKeyIndexForChain(chainId: number): number {
+    // BSC is not supported by Infura - uses public RPCs only
+    if (chainId === 56) return -1;
+
+    // Chain-to-key assignment mapping
+    // Each key handles 2 chains max to reduce burst
+    const chainKeyMap: Record<number, number> = {
+      1: 0,     // Ethereum → Key 1
+      137: 0,   // Polygon → Key 1
+      10: 1,    // Optimism → Key 2
+      42161: 1, // Arbitrum → Key 2
+      43114: 2, // Avalanche → Key 3
+    };
+
+    return chainKeyMap[chainId] ?? -1;
+  }
+
   private buildProviderList(chainId: number): ProviderConfig[] {
     const providers: ProviderConfig[] = [];
     
-    // Build Infura URLs from individual keys
+    // Build Infura URLs - only the assigned key for this chain
     const infuraKeys = this.getInfuraKeys();
     const infuraNetwork = this.getInfuraNetwork(chainId);
+    const assignedKeyIndex = this.getInfuraKeyIndexForChain(chainId);
     
-    if (infuraNetwork) {
-      for (let i = 0; i < infuraKeys.length; i++) {
-        const key = infuraKeys[i];
-        providers.push({
-          url: `https://${infuraNetwork}.infura.io/v3/${key}`,
-          name: `Infura-${i + 1}`,
-          weight: i, // First key has highest priority
-        });
-      }
+    if (infuraNetwork && assignedKeyIndex >= 0 && assignedKeyIndex < infuraKeys.length) {
+      const key = infuraKeys[assignedKeyIndex];
+      providers.push({
+        url: `https://${infuraNetwork}.infura.io/v3/${key}`,
+        name: `Infura-${assignedKeyIndex + 1}`,
+        weight: 0,
+      });
     }
 
     // Add fallback public RPCs
@@ -278,19 +356,18 @@ export class RpcProviderManager {
       // Still add fallbacks in case env var URL fails
     }
 
-    // Build WS URLs from Infura keys (only for supported chains)
+    // Build WS URLs from Infura keys - only the assigned key for this chain
     const infuraKeys = this.getInfuraKeys();
     const infuraNetwork = this.getInfuraWsNetwork(chainId);
+    const assignedKeyIndex = this.getInfuraKeyIndexForChain(chainId);
 
-    if (infuraNetwork) {
-      for (let i = 0; i < infuraKeys.length; i++) {
-        const key = infuraKeys[i];
-        urls.push({
-          url: `wss://${infuraNetwork}.infura.io/ws/v3/${key}`,
-          name: `Infura-WS-${i + 1}`,
-          weight: 10 + i,
-        });
-      }
+    if (infuraNetwork && assignedKeyIndex >= 0 && assignedKeyIndex < infuraKeys.length) {
+      const key = infuraKeys[assignedKeyIndex];
+      urls.push({
+        url: `wss://${infuraNetwork}.infura.io/ws/v3/${key}`,
+        name: `Infura-WS-${assignedKeyIndex + 1}`,
+        weight: 0,
+      });
     }
 
     // Add fallback public WebSocket endpoints
@@ -311,7 +388,16 @@ export class RpcProviderManager {
     };
     const keys = envKeys[chainId] || [];
     for (const key of keys) {
-      if (process.env[key]) return process.env[key]!;
+      const url = process.env[key];
+      if (url) {
+        // Skip invalid WS URLs: Infura does NOT support BSC
+        // If env var points to an Infura BSC endpoint, skip it (it will return 429/404)
+        if (chainId === 56 && url.includes('infura.io')) {
+          console.warn(`[WS Provider] Skipping invalid BSC WS URL from env (Infura does not support BSC): ${key}`);
+          return null;
+        }
+        return url;
+      }
     }
     return null;
   }
@@ -477,8 +563,9 @@ export class RpcProviderManager {
 
       // Create new provider with static network preset
       // This skips the eth_chainId detection call that causes "failed to detect network" spam
+      // Using StableJsonRpcProvider to suppress the retry loop on failure
       const networkPreset = this.getNetworkPreset(chainId);
-      const provider = new ethers.JsonRpcProvider(providerConfig.url, networkPreset);
+      const provider = new StableJsonRpcProvider(providerConfig.url, networkPreset);
       this.providers.set(cacheKey, provider);
       
       return provider;
@@ -578,6 +665,7 @@ export class RpcProviderManager {
 
   getStatus(): Array<{
     chainId: number;
+    assignedInfuraKey: number;
     providers: Array<{
       name: string;
       url: string;
@@ -597,6 +685,7 @@ export class RpcProviderManager {
   }> {
     const status: Array<{
       chainId: number;
+      assignedInfuraKey: number;
       providers: Array<{
         name: string;
         url: string;
@@ -630,7 +719,11 @@ export class RpcProviderManager {
         };
       });
 
-      const entry: any = { chainId, providers };
+      const entry: any = { 
+        chainId, 
+        assignedInfuraKey: this.getInfuraKeyIndexForChain(chainId) + 1, // 1-based for display
+        providers 
+      };
 
       // Add WS provider status if available
       const wsPool = this.wsPools.get(chainId);
