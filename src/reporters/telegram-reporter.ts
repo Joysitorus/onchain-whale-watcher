@@ -87,7 +87,7 @@ export class TelegramReporter {
 
       msg += `\n\n\uD83D\uDCA1 *SUPPLY IMPACT ANALYSIS*\n`;
       msg += `\uD83D\uDD17 Wallet: \`${si.walletAddress.slice(0, 6)}...${si.walletAddress.slice(-4)}\`\n`;
-      msg += `\uD83C\uDFF7\uFE0F Token: ${si.tokenSymbol} (${si.chainId === 1 ? 'ETH' : si.chainId === 56 ? 'BSC' : 'POLY'})\n`;
+      msg += `\uD83C\uDFF7\uFE0F Token: ${si.tokenSymbol} (${config.chains.find(c => c.chainId === si.chainId)?.name || 'Unknown'})\n`;
       msg += `\uD83D\uDCB0 Holdings: $${(si.holdingsUsd / 1_000_000).toFixed(2)}M\n`;
       msg += `\uD83D\uDCCA Supply: ${si.supplyPercentage.toFixed(6)}% dari total\n`;
 
