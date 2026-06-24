@@ -6,6 +6,7 @@ import { PriceFetcher } from './price-fetcher';
 import { MonitoredTransfer, WhaleTokenPurchase } from '../types';
 import { rpcProviderManager } from './rpc-provider-manager';
 import { LabelDatabase } from '../label-db';
+import { metrics } from '../metrics/metrics-service';
 
 interface RawLog {
   address: string;
@@ -154,6 +155,10 @@ export class TokenTransferFetcher {
 
       // P2-6 fix: Use shared PriceFetcher instead of duplicate CoinGecko client
       const tokenPriceUsd = await this.priceFetcher.getTokenPriceByCoinId(tokenInfo.coingeckoId || '');
+      // P3-12: Track price misses
+      if (tokenPriceUsd === 0 && tokenInfo.coingeckoId) {
+        metrics.priceMisses.inc({ chain_id: chain.chainId.toString(), token: tokenInfo.symbol });
+      }
       const amountUsd = amount * tokenPriceUsd;
 
       if (amountUsd < 10000) continue;

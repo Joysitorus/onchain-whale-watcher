@@ -23,6 +23,8 @@ export class MetricsService {
   public pollDuration: Histogram;
   public cacheHits: Counter;
   public cacheMisses: Counter;
+  // P3-12: Price fetch metrics
+  public priceMisses: Counter;
 
   constructor() {
     this.registry = new Registry();
@@ -108,6 +110,14 @@ export class MetricsService {
       name: 'onchain_cache_misses_total',
       help: 'Total number of cache misses',
       labelNames: ['cache_type'],
+      registers: [this.registry],
+    });
+
+    // P3-12: Price fetch miss counter
+    this.priceMisses = new Counter({
+      name: 'onchain_price_misses_total',
+      help: 'Total number of failed price fetches (returned 0)',
+      labelNames: ['chain_id', 'token'],
       registers: [this.registry],
     });
   }
