@@ -430,9 +430,9 @@ async function main() {
 
   console.log(`\n[Agent] Running. Next poll in ${config.pollIntervalMs / 1000}s. Press Ctrl+C to stop.\n`);
 
-  // Graceful shutdown
-  process.on('SIGINT', async () => {
-    console.log('\n[Agent] Shutting down...');
+  // P3-2: Unified shutdown handler - prevents duplication
+  async function gracefulShutdown(signal: string) {
+    console.log(`\n[Agent] Received ${signal}, shutting down...`);
     clearInterval(intervalId);
     clearInterval(healthIntervalId);
     await hybridConn.stop();
@@ -441,19 +441,10 @@ async function main() {
     await metrics.stopServer();
     await db.disconnect();
     process.exit(0);
-  });
+  }
 
-  process.on('SIGTERM', async () => {
-    console.log('\n[Agent] Shutting down...');
-    clearInterval(intervalId);
-    clearInterval(healthIntervalId);
-    await hybridConn.stop();
-    await queueService.disconnect();
-    await cacheService.disconnect();
-    await metrics.stopServer();
-    await db.disconnect();
-    process.exit(0);
-  });
+  process.on('SIGINT', () => gracefulShutdown('SIGINT'));
+  process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
 }
 
 // Global error handlers - prevent crashes from unhandled errors
