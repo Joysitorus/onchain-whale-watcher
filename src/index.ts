@@ -90,8 +90,9 @@ async function main() {
 
   console.log('[Init] Scraping Arkham Intelligence for entity labels...');
   const entities = await arkhamScraper.scrapeTopEntities();
+  const defaultChainId = config.chains[0]?.chainId || 1;
   for (const entity of entities) {
-    await db.upsertAddress(entity.address, 1, entity.name, entity.entityType, 'arkham');
+    await db.upsertAddress(entity.address, defaultChainId, entity.name, entity.entityType, 'arkham');
   }
 
   // Register job queue workers

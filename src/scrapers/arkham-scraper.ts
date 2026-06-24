@@ -105,6 +105,11 @@ export class ArkhamScraper {
     const $ = cheerio.load(html);
     const alerts: MonitoredTransfer[] = [];
 
+    // P2-7: Use first monitored chain instead of hardcoded chainId=1
+    const defaultChainId = config.chains[0]?.chainId || 1;
+    const defaultChain = config.chains.find(c => c.chainId === defaultChainId);
+    const defaultChainName = defaultChain?.name || 'Ethereum';
+
     $('[data-testid="alert-row"]').each((_, el) => {
       try {
         const from = $(el).find('[data-testid="alert-from"]').text().trim().toLowerCase();
@@ -113,22 +118,22 @@ export class ArkhamScraper {
         const hash = $(el).find('[data-testid="alert-hash"]').text().trim();
         const valueUsd = parseFloat(valueText.replace(/[^0-9.]/g, '')) || 0;
 
-        const fromLabel = this.labelDb.label(from, 1);
-        const toLabel = this.labelDb.label(to, 1);
+        const fromLabel = this.labelDb.label(from, defaultChainId);
+        const toLabel = this.labelDb.label(to, defaultChainId);
 
         if (valueUsd >= config.minTxValueUsd) {
           alerts.push({
             hash,
-            chainId: 1,
-            chainName: 'Ethereum',
+            chainId: defaultChainId,
+            chainName: defaultChainName,
             from,
             fromLabel,
-            fromType: this.labelDb.labelType(from, 1),
+            fromType: this.labelDb.labelType(from, defaultChainId),
             to,
             toLabel,
-            toType: this.labelDb.labelType(to, 1),
+            toType: this.labelDb.labelType(to, defaultChainId),
             valueUsd,
-            token: 'ETH',
+            token: defaultChain?.nativeToken || 'ETH',
             timestamp: Date.now(),
             significance: this.calcSignificance(valueUsd),
           });
