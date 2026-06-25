@@ -2,6 +2,16 @@ import { ethers } from 'ethers';
 import { EventEmitter } from 'events';
 import { config, ChainConfig } from '../config';
 
+// Network presets for WebSocketProvider (prevents network detection retry)
+const NETWORK_PRESETS: Record<number, ethers.Network> = {
+  1: new ethers.Network('mainnet', 1),
+  56: new ethers.Network('bsc-mainnet', 56),
+  137: new ethers.Network('polygon-mainnet', 137),
+  10: new ethers.Network('optimism-mainnet', 10),
+  42161: new ethers.Network('arbitrum-mainnet', 42161),
+  43114: new ethers.Network('avalanche-mainnet', 43114),
+};
+
 export interface BlockEvent {
   chainId: number;
   chainName: string;
@@ -69,7 +79,8 @@ export class WebSocketProvider extends EventEmitter {
 
   private createProvider(chain: ChainConfig, wsUrl: string): void {
     try {
-      const provider = new ethers.WebSocketProvider(wsUrl);
+      const networkPreset = NETWORK_PRESETS[chain.chainId] || new ethers.Network('unknown', chain.chainId);
+      const provider = new ethers.WebSocketProvider(wsUrl, networkPreset);
       this.providers.set(chain.chainId, provider);
       this.reconnectAttempts.set(chain.chainId, 0);
 
