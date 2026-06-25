@@ -80,10 +80,10 @@ export class TokenTransferFetcher {
     // BSC PublicNode has strict eth_getLogs limits (-32005 "limit exceeded")
     const MAX_TOKENS_PER_CHAIN: Record<number, number> = {
       1: 50,    // Ethereum - large block range needs fewer tokens
-      56: 15,   // BSC - strict rate limits on public RPCs
-      137: 30,  // Polygon
-      42161: 30, // Arbitrum
-      43114: 20, // Avalanche
+      56: 10,   // BSC - very strict rate limits on PublicNode (-32005 "limit exceeded")
+      137: 25,  // Polygon - PublicNode strict limits
+      42161: 25, // Arbitrum
+      43114: 15, // Avalanche - PublicNode strict limits
       10: 20,   // Optimism
     };
     const maxTokens = MAX_TOKENS_PER_CHAIN[chain.chainId] || 20;
@@ -129,7 +129,17 @@ export class TokenTransferFetcher {
 
     const purchases: WhaleTokenPurchase[] = [];
     const decimals = tokenInfo.decimals;
-    const BLOCK_STEP = 2000;
+    // PublicNode limits eth_getLogs to 50 blocks max (error: "BLOCK_STEP 0x7d0 too large — maximum 0x32")
+    // Different providers have different limits; use conservative 49 for all chains
+    const BLOCK_STEP_PER_CHAIN: Record<number, number> = {
+      1: 49,     // Ethereum - Infura allows more, but keep consistent
+      56: 49,    // BSC - PublicNode strict 50 block limit
+      137: 49,   // Polygon - PublicNode strict 50 block limit
+      42161: 49, // Arbitrum
+      43114: 49, // Avalanche
+      10: 49,    // Optimism
+    };
+    const BLOCK_STEP = BLOCK_STEP_PER_CHAIN[chain.chainId] || 49;
 
     // Collect all logs first, then batch block lookups (P2-3 fix)
     const allLogs: { log: RawLog; blockNum: number }[] = [];
@@ -137,21 +147,42 @@ export class TokenTransferFetcher {
     for (let start = fromBlock; start <= toBlock; start += BLOCK_STEP) {
       const end = Math.min(start + BLOCK_STEP - 1, toBlock);
 
-      try {
-        const logs = await provider.send('eth_getLogs', [{
-          address: tokenAddress,
-          topics: [TRANSFER_TOPIC],
-          fromBlock: '0x' + start.toString(16),
-          toBlock: '0x' + end.toString(16),
-        }]) as RawLog[];
+      // Retry logic for rate limits and transient errors
+      let lastError: any = null;
+      for (let retry = 0; retry < 3; retry++) {
+        try {
+          const logs = await provider.send('eth_getLogs', [{
+            address: tokenAddress,
+            topics: [TRANSFER_TOPIC],
+            fromBlock: '0x' + start.toString(16),
+            toBlock: '0x' + end.toString(16),
+          }]) as RawLog[];
 
-
-        for (const log of logs) {
-          const blockNum = parseInt(log.blockNumber, 16);
-          allLogs.push({ log, blockNum });
+          for (const log of logs) {
+            const blockNum = parseInt(log.blockNumber, 16);
+            allLogs.push({ log, blockNum });
+          }
+          lastError = null;
+          break; // Success, exit retry loop
+        } catch (err: any) {
+          lastError = err;
+          const msg = err.message?.toLowerCase() || '';
+          const isRateLimit = msg.includes('429') || msg.includes('rate limit') || msg.includes('limit exceeded') || msg.includes('-32005');
+          
+          if (isRateLimit && retry < 2) {
+            // Exponential backoff: 2s, 4s
+            const delay = 2000 * Math.pow(2, retry);
+            await new Promise(resolve => setTimeout(resolve, delay));
+            continue;
+          }
+          
+          // Non-retryable error or last retry
+          break;
         }
-      } catch (err: any) {
-        console.warn(`[TokenFetcher] Failed to fetch chunk ${start}-${end} for ${tokenInfo.symbol} on ${chain.name}: ${err.message}`);
+      }
+
+      if (lastError) {
+        console.warn(`[TokenFetcher] Failed to fetch chunk ${start}-${end} for ${tokenInfo.symbol} on ${chain.name}: ${lastError.message?.substring(0, 100)}`);
       }
     }
 
@@ -273,7 +304,8 @@ export class TokenTransferFetcher {
     return provider.getBlockNumber();
   }
 
-  async fetchRecentPurchases(chain: ChainConfig, blocksBack: number = 100): Promise<WhaleTokenPurchase[]> {
+  // Reduced blocksBack from 100 to 50 to stay within PublicNode's 50-block eth_getLogs limit
+  async fetchRecentPurchases(chain: ChainConfig, blocksBack: number = 50): Promise<WhaleTokenPurchase[]> {
     const provider = await this.getProvider(chain.chainId);
     if (!provider) return [];
 

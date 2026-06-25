@@ -129,7 +129,7 @@ const KNOWN_TOKENS: TokenInfo[] = [
   { address: '0x55d398326f99059ff775485246999027b3197955', chainId: 56, name: 'Tether USD', symbol: 'USDT', decimals: 18, coingeckoId: 'tether' },
   { address: '0x8ac76a51cc950d9822d68b83fe1ad97b32cd580d', chainId: 56, name: 'USD Coin', symbol: 'USDC', decimals: 18, coingeckoId: 'usd-coin' },
   { address: '0x0e09fabb73bd3ade0a17ecc321fd13a19e81ce82', chainId: 56, name: 'PancakeSwap', symbol: 'CAKE', decimals: 18, coingeckoId: 'pancakeswap-token' },
-  { address: '0x7130d2a12b9bcbfee29384f2600056832b6c350', chainId: 56, name: 'Binance Coin', symbol: 'BNB', decimals: 18, coingeckoId: 'binancecoin' },
+  { address: '0xbb4CdB9CBd36B01bD1cBaEBF2De08d9173bc095c', chainId: 56, name: 'Wrapped BNB', symbol: 'WBNB', decimals: 18, coingeckoId: 'binancecoin' },
   { address: '0x1af3f329e8be154074d8769d1ffa4ee058b1b3b4', chainId: 56, name: 'Dai Stablecoin', symbol: 'DAI', decimals: 18, coingeckoId: 'dai' },
   { address: '0x3ee2200e23fc490f32157f0976be6ed4bc9b56aa', chainId: 56, name: 'Binance USD', symbol: 'BUSD', decimals: 18, coingeckoId: 'binance-usd' },
   { address: '0x7083609fce4d1d8dc0c97908d9208cf8f97010c5', chainId: 56, name: 'Polkadot', symbol: 'DOT', decimals: 18, coingeckoId: 'polkadot' },

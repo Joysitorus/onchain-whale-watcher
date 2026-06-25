@@ -305,31 +305,31 @@ export class RpcProviderManager {
   }
 
   private getDefaultPublicRpcs(chainId: number): ProviderConfig[] {
+    // Removed broken RPCs: 1rpc.io (returns "unknown network"/404), LlamaRPC (521), Ankr (requires API key)
     const publicRpcs: Record<number, ProviderConfig[]> = {
       1: [
         { url: 'https://ethereum-rpc.publicnode.com', name: 'PublicNode-ETH', weight: 200 },
-        { url: 'https://1rpc.io/eth', name: '1RPC-ETH', weight: 201 },
-        { url: 'https://eth.drpc.org', name: 'Drpc-ETH', weight: 202 },
+        { url: 'https://rpc.mevblocker.io', name: 'MEVBlocker-ETH', weight: 201 },
       ],
       56: [
         { url: 'https://bsc-rpc.publicnode.com', name: 'PublicNode-BSC', weight: 200 },
-        { url: 'https://1rpc.io/bsc', name: '1RPC-BSC', weight: 201 },
+        { url: 'https://bsc-dataseed.binance.org/', name: 'Binance-BSC', weight: 201 },
       ],
       137: [
         { url: 'https://polygon-bor-rpc.publicnode.com', name: 'PublicNode-Polygon', weight: 200 },
-        { url: 'https://1rpc.io/matic', name: '1RPC-Polygon', weight: 201 },
+        { url: 'https://polygon.drpc.org', name: 'Drpc-Polygon', weight: 201 },
       ],
       10: [
         { url: 'https://optimism-rpc.publicnode.com', name: 'PublicNode-OP', weight: 200 },
-        { url: 'https://1rpc.io/op', name: '1RPC-OP', weight: 201 },
+        { url: 'https://mainnet.optimism.io', name: 'Optimism-Official', weight: 201 },
       ],
       42161: [
         { url: 'https://arbitrum-one-rpc.publicnode.com', name: 'PublicNode-Arb', weight: 200 },
-        { url: 'https://1rpc.io/arb', name: '1RPC-Arb', weight: 201 },
+        { url: 'https://arb1.arbitrum.io/rpc', name: 'Arbitrum-Official', weight: 201 },
       ],
       43114: [
         { url: 'https://avalanche-c-chain-rpc.publicnode.com', name: 'PublicNode-AVAX', weight: 200 },
-        { url: 'https://1rpc.io/avax/c-chain', name: '1RPC-AVAX', weight: 201 },
+        { url: 'https://api.avax.network/ext/bc/C/rpc', name: 'Avalanche-Official', weight: 201 },
       ],
     };
     

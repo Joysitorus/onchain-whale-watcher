@@ -125,7 +125,7 @@ async function main() {
   let isPolling = false;
 
   // P2-14: Poll timeout to prevent zombie state
-  const POLL_TIMEOUT_MS = parseInt(process.env.POLL_TIMEOUT_MS || '120000', 10); // 2 minutes default
+  const POLL_TIMEOUT_MS = parseInt(process.env.POLL_TIMEOUT_MS || '180000', 10); // 3 minutes default (increased from 2min)
 
   async function poll() {
     // Prevent concurrent poll execution
