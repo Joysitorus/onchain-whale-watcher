@@ -1,4 +1,5 @@
 import { ethers } from 'ethers';
+import { rpcProviderManager } from '../fetchers/rpc-provider-manager';
 
 export interface TokenInfo {
   address: string;
@@ -230,15 +231,11 @@ export const TRANSFER_TOPIC = '0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11
 
 export class TokenRegistry {
   private tokens: Map<string, TokenInfo> = new Map();
-  private providerCache: Map<number, ethers.JsonRpcProvider> = new Map();
   private fetchingContracts: Set<string> = new Set();
 
   constructor(rpcUrls: Map<number, string>) {
-    for (const [chainId, url] of rpcUrls) {
-      if (url) {
-        this.providerCache.set(chainId, new ethers.JsonRpcProvider(url));
-      }
-    }
+    // Providers are now managed by rpcProviderManager (StableJsonRpcProvider)
+    // No need to create raw ethers.JsonRpcProvider instances
 
     // Load known tokens
     for (const token of KNOWN_TOKENS) {
@@ -291,7 +288,8 @@ export class TokenRegistry {
     if (this.fetchingContracts.has(key)) return null;
     this.fetchingContracts.add(key);
 
-    const provider = this.providerCache.get(chainId);
+    // Use StableJsonRpcProvider via rpcProviderManager to prevent network detection retry loop
+    const provider = await rpcProviderManager.getProvider(chainId);
     if (!provider) return null;
 
     try {

@@ -51,6 +51,7 @@ export class HybridConnectionManager extends EventEmitter {
       console.log(`[Hybrid] Provider rotation enabled with ${config.infuraKeys.length} Infura keys`);
     }
 
+    // Start all polling immediately (no stagger needed - HTTP is resilient)
     for (const chain of config.chains) {
       if (!chain.rpcUrl) {
         console.warn(`[${chain.name}] No RPC URL configured, skipping`);
@@ -68,19 +69,28 @@ export class HybridConnectionManager extends EventEmitter {
         reconnectAttempts: 0,
       });
 
-      // HTTP provider is managed by rpcProviderManager (with rotation)
-      // No need to create a separate provider here
-
-      // Try WebSocket if enabled
-      if (config.enableWebSocket) {
-        const wsUrl = this.getNextWsUrl(chain.chainId);
-        if (wsUrl) {
-          await this.connectWebSocket(chain, wsUrl);
-        }
-      }
-
       // Always start polling as fallback
       this.startPolling(chain);
+    }
+
+    // Stagger WebSocket connections to avoid bursting all Infura keys simultaneously
+    // Each WS pre-flight test takes ~1-2s, so 500ms stagger prevents overlap
+    if (config.enableWebSocket) {
+      for (let i = 0; i < config.chains.length; i++) {
+        const chain = config.chains[i];
+        if (!chain.rpcUrl) continue;
+
+        if (i > 0) {
+          // 500ms stagger between each chain's WS attempt
+          await new Promise(resolve => setTimeout(resolve, 500));
+        }
+
+        const wsUrl = this.getNextWsUrl(chain.chainId);
+        if (wsUrl) {
+          // Fire and forget - don't await, let it connect in background
+          this.connectWebSocket(chain, wsUrl).catch(() => {});
+        }
+      }
     }
   }
 
@@ -172,12 +182,25 @@ export class HybridConnectionManager extends EventEmitter {
     }
 
     try {
-      const wsProvider = new ethers.WebSocketProvider(wsUrl);
+      // IMPORTANT: Pre-open raw WS connection before creating ethers provider
+      // This prevents ethers from creating its own connection that can race
+      // and throw uncaught 429 errors before our error handler is attached
+      const rawWs = new WebSocket(wsUrl);
+      await new Promise<void>((resolve, reject) => {
+        const timer = setTimeout(() => {
+          rawWs.terminate();
+          reject(new Error('WS open timeout'));
+        }, 10000);
+        rawWs.on('open', () => { clearTimeout(timer); resolve(); });
+        rawWs.on('error', (err: Error) => { clearTimeout(timer); reject(err); });
+      });
+
+      // Connection is now open - pass to ethers
+      const wsProvider = new ethers.WebSocketProvider(rawWs as any);
 
       // IMPORTANT: Attach error handler IMMEDIATELY to prevent uncaught errors
-      // The WS connection can fail before we finish setup
       let consecutiveErrors = 0;
-      const MAX_CONSECUTIVE_ERRORS = 10;
+      const MAX_CONSECUTIVE_ERRORS = 5; // Lower threshold: disconnect faster
 
       wsProvider.on('error', (err) => {
         console.error(`[WS] Error on ${chain.name}: ${err.message?.substring(0, 100)}`);
@@ -214,14 +237,16 @@ export class HybridConnectionManager extends EventEmitter {
       // Listen for new blocks via WebSocket
       wsProvider.on('block', async (blockNumber) => {
         try {
-          health.lastBlockNumber = blockNumber;
-          health.lastUpdate = Date.now();
-          health.errorCount = 0;
-          consecutiveErrors = 0; // Reset on successful block
-
           // Fetch full block data
           const block = await wsProvider.getBlock(blockNumber);
           if (block) {
+            // Only reset consecutiveErrors ON SUCCESS (not at the start!)
+            consecutiveErrors = 0;
+
+            health.lastBlockNumber = blockNumber;
+            health.lastUpdate = Date.now();
+            health.errorCount = 0;
+
             this.emit('block', {
               chainId: chain.chainId,
               chainName: chain.name,
@@ -253,9 +278,14 @@ export class HybridConnectionManager extends EventEmitter {
           }
         } catch (err: any) {
           consecutiveErrors++;
-          console.warn(`[WS] Error processing block on ${chain.name}: ${err.message?.substring(0, 100)}`);
-          if (consecutiveErrors >= MAX_CONSECUTIVE_ERRORS) {
-            console.error(`[WS] Too many block errors on ${chain.name}, disconnecting`);
+          const errMsg = err.message?.substring(0, 100) || '';
+          console.warn(`[WS] Error processing block on ${chain.name}: ${errMsg}`);
+
+          // "internal error" means the node's subscription is broken - disconnect immediately
+          const isFatal = errMsg.includes('internal error') || errMsg.includes('could not coalesce error');
+
+          if (isFatal || consecutiveErrors >= MAX_CONSECUTIVE_ERRORS) {
+            console.error(`[WS] ${isFatal ? 'Fatal error' : 'Too many block errors'} on ${chain.name} (${consecutiveErrors}), disconnecting`);
             this.handleWebSocketDisconnect(chain);
           }
         }
