@@ -230,9 +230,10 @@ INFURA_KEY_2=your_infura_key_2
 INFURA_KEY_3=your_infura_key_3
 
 # Fallback RPC URLs (comma-separated, used when all Infura keys exhausted)
-ETH_RPC_FALLBACKS=https://rpc.ankr.com/eth,https://eth.llamarpc.com
-BSC_RPC_FALLBACKS=https://bsc-dataseed.binance.org/,https://rpc.ankr.com/bsc
-POLYGON_RPC_FALLBACKS=https://polygon-rpc.com,https://rpc.ankr.com/polygon
+# Note: Broken RPCs (LlamaRPC, Ankr without API key) are auto-skipped by code
+ETH_RPC_FALLBACKS=https://ethereum-rpc.publicnode.com,https://rpc.mevblocker.io
+BSC_RPC_FALLBACKS=https://bsc-rpc.publicnode.com,https://bsc-dataseed.binance.org/
+POLYGON_RPC_FALLBACKS=https://polygon-bor-rpc.publicnode.com,https://polygon.drpc.org
 
 # Enable multi-provider rotation (true/false)
 # true = Auto-rotate between Infura keys + fallbacks (RECOMMENDED)

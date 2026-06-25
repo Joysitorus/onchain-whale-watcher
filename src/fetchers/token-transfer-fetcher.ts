@@ -29,11 +29,12 @@ interface RawLog {
 
 export class TokenTransferFetcher {
   private legacyProviders: Map<number, ethers.JsonRpcProvider> = new Map();
-  private priceFetcher = new PriceFetcher();
+  private priceFetcher: PriceFetcher;
   private fetchBlockCache: Map<number, number> = new Map();
   private useProviderManager: boolean;
 
-  constructor(private tokenRegistry: TokenRegistry, private labelDb?: LabelDatabase) {
+  constructor(private tokenRegistry: TokenRegistry, private labelDb?: LabelDatabase, sharedPriceFetcher?: PriceFetcher) {
+    this.priceFetcher = sharedPriceFetcher || new PriceFetcher();
     this.useProviderManager = config.rpcProviderRotation && config.infuraKeys.length > 1;
 
     if (!this.useProviderManager) {
@@ -89,11 +90,24 @@ export class TokenTransferFetcher {
     const maxTokens = MAX_TOKENS_PER_CHAIN[chain.chainId] || 20;
     const tokensToFetch = chainTokens.slice(0, maxTokens);
 
-    for (const tokenInfo of tokensToFetch) {
+    // BSC needs delays between token fetches to avoid -32005 rate limits on PublicNode
+    const INTER_TOKEN_DELAY_MS: Record<number, number> = {
+      56: 2000,   // BSC: 2s delay between tokens
+      137: 500,   // Polygon: 500ms delay
+    };
+    const interTokenDelay = INTER_TOKEN_DELAY_MS[chain.chainId] || 0;
+
+    for (let i = 0; i < tokensToFetch.length; i++) {
+      const tokenInfo = tokensToFetch[i];
       // Validate address before making RPC call (prevents invalid address errors)
       if (!this.isValidEthAddress(tokenInfo.address)) {
         console.warn(`[TokenFetcher] Skipping invalid address for ${tokenInfo.symbol} on ${chain.name}: ${tokenInfo.address}`);
         continue;
+      }
+
+      // Add delay between token fetches for rate-limited chains
+      if (interTokenDelay > 0 && i > 0) {
+        await new Promise(resolve => setTimeout(resolve, interTokenDelay));
       }
 
       try {
@@ -178,8 +192,9 @@ export class TokenTransferFetcher {
           lastError = err;
           const msg = err.message?.toLowerCase() || '';
           const isRateLimit = msg.includes('429') || msg.includes('rate limit') || msg.includes('limit exceeded') || msg.includes('-32005');
+          const isTimeout = msg.includes('-32002') || msg.includes('timeout') || msg.includes('timed out');
           
-          if (isRateLimit && retry < 2) {
+          if ((isRateLimit || isTimeout) && retry < 2) {
             // Exponential backoff: 2s, 4s
             const delay = 2000 * Math.pow(2, retry);
             await new Promise(resolve => setTimeout(resolve, delay));
@@ -221,6 +236,11 @@ export class TokenTransferFetcher {
     }
 
     // Process logs with cached blocks
+    // P4: Batch-fetch all unique CoinGecko prices BEFORE processing logs
+    // This reduces N individual API calls to 1 batch call
+    const uniqueCoinGeckoIds = new Set<string>();
+    const logsWithAddresses: { log: RawLog; blockNum: number; fromAddr: string; toAddr: string }[] = [];
+    
     for (const { log, blockNum } of allLogs) {
       const fromAddr = '0x' + log.topics[1].slice(26).toLowerCase();
       const toAddr = '0x' + log.topics[2].slice(26).toLowerCase();
@@ -235,19 +255,45 @@ export class TokenTransferFetcher {
 
       if (!isWatched) continue;
 
+      logsWithAddresses.push({ log, blockNum, fromAddr, toAddr });
+      
+      if (tokenInfo.coingeckoId) {
+        uniqueCoinGeckoIds.add(tokenInfo.coingeckoId);
+      }
+    }
+
+    // Batch-fetch all prices in one CoinGecko API call (instead of N individual calls)
+    let priceMap = new Map<string, number>();
+    if (uniqueCoinGeckoIds.size > 0) {
+      priceMap = await this.priceFetcher.getTokenPricesByCoinIds([...uniqueCoinGeckoIds]);
+    }
+
+    // Process logs with batch-fetched prices
+    for (const { log, blockNum, fromAddr, toAddr } of logsWithAddresses) {
+      const rawAmount = BigInt(log.data);
+      const amount = Number(rawAmount) / Math.pow(10, decimals);
+
       // Auto-discover unknown tokens
-      if (!tokenInfo.coingeckoId) {
+      let currentTokenInfo = tokenInfo;
+      if (!currentTokenInfo.coingeckoId) {
         const discovered = await this.tokenRegistry.fetchTokenInfo(tokenAddress, chain.chainId);
         if (discovered) {
-          tokenInfo = discovered;
+          currentTokenInfo = discovered;
+          // Fetch price for newly discovered token
+          if (discovered.coingeckoId) {
+            const newPrice = await this.priceFetcher.getTokenPriceByCoinId(discovered.coingeckoId);
+            priceMap.set(discovered.coingeckoId, newPrice);
+          }
         }
       }
 
-      // P2-6 fix: Use shared PriceFetcher instead of duplicate CoinGecko client
-      const tokenPriceUsd = await this.priceFetcher.getTokenPriceByCoinId(tokenInfo.coingeckoId || '');
+      // Use batch-fetched price (or individual fetch for newly discovered tokens)
+      const tokenPriceUsd = priceMap.get(currentTokenInfo.coingeckoId || '') ?? 
+        await this.priceFetcher.getTokenPriceByCoinId(currentTokenInfo.coingeckoId || '');
+      
       // P3-12: Track price misses
-      if (tokenPriceUsd === 0 && tokenInfo.coingeckoId) {
-        metrics.priceMisses.inc({ chain_id: chain.chainId.toString(), token: tokenInfo.symbol });
+      if (tokenPriceUsd === 0 && currentTokenInfo.coingeckoId) {
+        metrics.priceMisses.inc({ chain_id: chain.chainId.toString(), token: currentTokenInfo.symbol });
       }
       const amountUsd = amount * tokenPriceUsd;
 
@@ -267,8 +313,8 @@ export class TokenTransferFetcher {
         chainId: chain.chainId,
         chainName: chain.name,
         tokenAddress: tokenAddress.toLowerCase(),
-        tokenSymbol: tokenInfo.symbol,
-        tokenName: tokenInfo.name,
+        tokenSymbol: currentTokenInfo.symbol,
+        tokenName: currentTokenInfo.name,
         tokenDecimals: decimals,
         amount: amount.toString(),
         amountUsd,

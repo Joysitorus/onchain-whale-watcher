@@ -18,13 +18,14 @@ const NETWORK_PRESETS: Record<number, ethers.Network> = {
 
 export class RpcFetcher {
   private legacyProviders: Map<number, ethers.JsonRpcProvider> = new Map();
-  private priceFetcher = new PriceFetcher();
+  private priceFetcher: PriceFetcher;
   private useProviderManager: boolean;
 
   // P3-1: Reorg-safe depth - skip recent N blocks to avoid reorganized blocks
   private readonly REORG_SAFE_DEPTH = 12; // ~2.5 minutes on Ethereum (12s blocks)
 
-  constructor(private labelDb: LabelDatabase) {
+  constructor(private labelDb: LabelDatabase, sharedPriceFetcher?: PriceFetcher) {
+    this.priceFetcher = sharedPriceFetcher || new PriceFetcher();
     this.useProviderManager = config.rpcProviderRotation && config.infuraKeys.length > 1;
     
     if (this.useProviderManager) {

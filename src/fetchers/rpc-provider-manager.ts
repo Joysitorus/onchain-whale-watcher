@@ -289,6 +289,11 @@ export class RpcProviderManager {
     if (customFallbacks) {
       const urls = customFallbacks.split(',').map(u => u.trim()).filter(Boolean);
       urls.forEach((url, i) => {
+        // Skip known broken URLs that cause persistent errors
+        if (this.isBrokenUrl(url)) {
+          console.warn(`[RPC Provider] Skipping broken URL from env: ${url}`);
+          return;
+        }
         fallbacks.push({
           url,
           name: `Fallback-${i + 1}`,
@@ -302,6 +307,21 @@ export class RpcProviderManager {
     fallbacks.push(...defaultPublic);
 
     return fallbacks;
+  }
+
+  /**
+   * Detect known broken RPC URLs that cause persistent errors.
+   * These should be skipped even if they appear in env vars (Railway caching issue).
+   */
+  private isBrokenUrl(url: string): boolean {
+    const lower = url.toLowerCase();
+    // LlamaRPC returns HTTP 521 (server down)
+    if (lower.includes('llamarpc.com')) return true;
+    // Ankr free RPC requires API key - Unauthorized error
+    if (lower.includes('ankr.com') && !lower.includes('api_key=')) return true;
+    // 1rpc.io returns "unknown network" or 404
+    if (lower.includes('1rpc.io')) return true;
+    return false;
   }
 
   private getDefaultPublicRpcs(chainId: number): ProviderConfig[] {

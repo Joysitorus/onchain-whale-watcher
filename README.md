@@ -68,7 +68,7 @@ INFURA_KEY_2=your_infura_key_2
 INFURA_KEY_3=your_infura_key_3
 
 # Fallback RPCs (comma-separated, saat semua Infura keys habis)
-ETH_RPC_FALLBACKS=https://rpc.ankr.com/eth,https://eth.llamarpc.com
+ETH_RPC_FALLBACKS=https://ethereum-rpc.publicnode.com,https://rpc.mevblocker.io
 
 # Chain yang dimonitor (chain ID, comma-separated)
 MONITORED_CHAINS=1,56,137,42161,43114,10

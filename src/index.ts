@@ -18,6 +18,7 @@ import { HybridConnectionManager } from './fetchers/hybrid-connection';
 import { QueueService } from './queue/queue-service';
 import { metrics } from './metrics/metrics-service';
 import { rpcProviderManager } from './fetchers/rpc-provider-manager';
+import { PriceFetcher } from './fetchers/price-fetcher';
 
 async function main() {
   console.log('=== On-Chain Activity Agent ===');
@@ -32,7 +33,10 @@ async function main() {
   // Init core modules
   const labelDb = new LabelDatabase();
   const arkhamScraper = new ArkhamScraper(labelDb);
-  const rpcFetcher = new RpcFetcher(labelDb);
+  
+  // P4: Single shared PriceFetcher instance (prevents duplicate CoinGecko API calls)
+  const sharedPriceFetcher = new PriceFetcher();
+  const rpcFetcher = new RpcFetcher(labelDb, sharedPriceFetcher);
   const analyzer = new TransactionAnalyzer(labelDb);
   const signalGen = new SignalGenerator();
   const consoleReporter = new ConsoleReporter();
@@ -54,7 +58,7 @@ async function main() {
     if (chain.rpcUrl) rpcUrls.set(chain.chainId, chain.rpcUrl);
   }
   const tokenRegistry = new TokenRegistry(rpcUrls);
-  const tokenTransferFetcher = new TokenTransferFetcher(tokenRegistry, labelDb);
+  const tokenTransferFetcher = new TokenTransferFetcher(tokenRegistry, labelDb, sharedPriceFetcher);
 
   // Init database
   const db = new Database();
