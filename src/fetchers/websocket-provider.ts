@@ -80,7 +80,7 @@ export class WebSocketProvider extends EventEmitter {
   private createProvider(chain: ChainConfig, wsUrl: string): void {
     try {
       const networkPreset = NETWORK_PRESETS[chain.chainId] || new ethers.Network('unknown', chain.chainId);
-      const provider = new ethers.WebSocketProvider(wsUrl, networkPreset);
+      const provider = new ethers.WebSocketProvider(wsUrl, networkPreset, { staticNetwork: networkPreset });
       this.providers.set(chain.chainId, provider);
       this.reconnectAttempts.set(chain.chainId, 0);
 

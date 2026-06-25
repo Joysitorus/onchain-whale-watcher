@@ -205,9 +205,9 @@ export class HybridConnectionManager extends EventEmitter {
         rawWs.on('error', (err: Error) => { clearTimeout(timer); reject(err); });
       });
 
-      // Connection is now open - pass to ethers with network preset to prevent detection retry
+      // Connection is now open - pass to ethers with staticNetwork to prevent detection retry
       const networkPreset = NETWORK_PRESETS[chain.chainId] || new ethers.Network('unknown', chain.chainId);
-      const wsProvider = new ethers.WebSocketProvider(rawWs as any, networkPreset);
+      const wsProvider = new ethers.WebSocketProvider(rawWs as any, networkPreset, { staticNetwork: networkPreset });
 
       // IMPORTANT: Attach error handler IMMEDIATELY to prevent uncaught errors
       let consecutiveErrors = 0;

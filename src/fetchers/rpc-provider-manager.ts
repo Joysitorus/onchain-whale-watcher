@@ -1,27 +1,14 @@
 import { ethers } from 'ethers';
 
 /**
- * StableJsonRpcProvider - Custom provider that suppresses the "failed to detect network" retry spam.
- * When ethers.js v6 cannot detect the network (e.g., rate limited), it retries every 1 second
- * indefinitely, flooding logs. This subclass overrides _detectNetwork to return the preset
- * network on failure instead of retrying forever.
+ * StableJsonRpcProvider - Custom provider that prevents the "failed to detect network" retry spam.
+ * Uses ethers.js v6's built-in staticNetwork option to completely disable eth_chainId detection.
  */
 export class StableJsonRpcProvider extends ethers.JsonRpcProvider {
   constructor(url: string, network: ethers.Networkish) {
-    super(url, network);
-  }
-
-  async _detectNetwork(): Promise<ethers.Network> {
-    try {
-      return await super._detectNetwork();
-    } catch {
-      // On failure, return the preset network without retrying
-      // This prevents the "failed to detect network and cannot start up; retry in 1s" spam
-      if (this._network) {
-        return this._network;
-      }
-      throw new Error('Network detection failed (no preset available)');
-    }
+    // Pass staticNetwork option to prevent network detection retry loop
+    // This tells ethers to NEVER call eth_chainId, avoiding the infinite retry
+    super(url, network, { staticNetwork: ethers.Network.from(network) });
   }
 }
 
