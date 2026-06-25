@@ -4,7 +4,17 @@ import { ChainConfig } from '../config';
 import { LabelDatabase } from '../label-db';
 import { Transaction, MonitoredTransfer } from '../types';
 import { PriceFetcher } from './price-fetcher';
-import { rpcProviderManager } from './rpc-provider-manager';
+import { rpcProviderManager, StableJsonRpcProvider } from './rpc-provider-manager';
+
+// Network presets for StableJsonRpcProvider (prevents network detection retry)
+const NETWORK_PRESETS: Record<number, ethers.Network> = {
+  1: new ethers.Network('mainnet', 1),
+  56: new ethers.Network('bsc-mainnet', 56),
+  137: new ethers.Network('polygon-mainnet', 137),
+  10: new ethers.Network('optimism-mainnet', 10),
+  42161: new ethers.Network('arbitrum-mainnet', 42161),
+  43114: new ethers.Network('avalanche-mainnet', 43114),
+};
 
 export class RpcFetcher {
   private legacyProviders: Map<number, ethers.JsonRpcProvider> = new Map();
@@ -20,10 +30,11 @@ export class RpcFetcher {
     if (this.useProviderManager) {
       console.log(`[RPC] Using multi-provider rotation with ${config.infuraKeys.length} Infura keys`);
     } else {
-      // Fallback to legacy single provider mode
+      // Fallback to legacy single provider mode using StableJsonRpcProvider
       for (const chain of config.chains) {
         if (chain.rpcUrl) {
-          this.legacyProviders.set(chain.chainId, new ethers.JsonRpcProvider(chain.rpcUrl));
+          const networkPreset = NETWORK_PRESETS[chain.chainId] || new ethers.Network('unknown', chain.chainId);
+          this.legacyProviders.set(chain.chainId, new StableJsonRpcProvider(chain.rpcUrl, networkPreset));
         }
       }
     }

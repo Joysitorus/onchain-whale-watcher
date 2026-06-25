@@ -4,9 +4,19 @@ import { config, ChainConfig } from '../config';
 import { TokenRegistry, TRANSFER_TOPIC } from '../tokens/token-registry';
 import { PriceFetcher } from './price-fetcher';
 import { MonitoredTransfer, WhaleTokenPurchase } from '../types';
-import { rpcProviderManager } from './rpc-provider-manager';
+import { rpcProviderManager, StableJsonRpcProvider } from './rpc-provider-manager';
 import { LabelDatabase } from '../label-db';
 import { metrics } from '../metrics/metrics-service';
+
+// Network presets for StableJsonRpcProvider (prevents network detection retry)
+const NETWORK_PRESETS: Record<number, ethers.Network> = {
+  1: new ethers.Network('mainnet', 1),
+  56: new ethers.Network('bsc-mainnet', 56),
+  137: new ethers.Network('polygon-mainnet', 137),
+  10: new ethers.Network('optimism-mainnet', 10),
+  42161: new ethers.Network('arbitrum-mainnet', 42161),
+  43114: new ethers.Network('avalanche-mainnet', 43114),
+};
 
 interface RawLog {
   address: string;
@@ -27,10 +37,11 @@ export class TokenTransferFetcher {
     this.useProviderManager = config.rpcProviderRotation && config.infuraKeys.length > 1;
 
     if (!this.useProviderManager) {
-      // Fallback: create own providers (only when rotation is disabled)
+      // Fallback: create own providers using StableJsonRpcProvider (only when rotation is disabled)
       for (const chain of config.chains) {
         if (chain.rpcUrl) {
-          this.legacyProviders.set(chain.chainId, new ethers.JsonRpcProvider(chain.rpcUrl));
+          const networkPreset = NETWORK_PRESETS[chain.chainId] || new ethers.Network('unknown', chain.chainId);
+          this.legacyProviders.set(chain.chainId, new StableJsonRpcProvider(chain.rpcUrl, networkPreset));
         }
       }
     }

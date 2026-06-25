@@ -6,7 +6,7 @@ import { ethers } from 'ethers';
  * indefinitely, flooding logs. This subclass overrides _detectNetwork to return the preset
  * network on failure instead of retrying forever.
  */
-class StableJsonRpcProvider extends ethers.JsonRpcProvider {
+export class StableJsonRpcProvider extends ethers.JsonRpcProvider {
   constructor(url: string, network: ethers.Networkish) {
     super(url, network);
   }
