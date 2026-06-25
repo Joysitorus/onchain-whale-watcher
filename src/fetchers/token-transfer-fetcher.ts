@@ -92,10 +92,11 @@ export class TokenTransferFetcher {
 
     // BSC needs delays between token fetches to avoid -32005 rate limits on PublicNode
     const INTER_TOKEN_DELAY_MS: Record<number, number> = {
-      56: 2000,   // BSC: 2s delay between tokens
-      137: 500,   // Polygon: 500ms delay
+      56: 3000,   // BSC: 3s delay between tokens (increased from 2s)
+      137: 1000,  // Polygon: 1s delay (increased from 500ms)
     };
     const interTokenDelay = INTER_TOKEN_DELAY_MS[chain.chainId] || 0;
+    let consecutiveRateLimits = 0; // Track consecutive rate limits to stop early
 
     for (let i = 0; i < tokensToFetch.length; i++) {
       const tokenInfo = tokensToFetch[i];
@@ -105,9 +106,17 @@ export class TokenTransferFetcher {
         continue;
       }
 
+      // If 2+ consecutive rate limits, skip remaining tokens (provider is saturated)
+      if (consecutiveRateLimits >= 2) {
+        console.warn(`[TokenFetcher] ${chain.name}: ${consecutiveRateLimits} consecutive rate limits - skipping remaining ${tokensToFetch.length - i} tokens`);
+        break;
+      }
+
       // Add delay between token fetches for rate-limited chains
       if (interTokenDelay > 0 && i > 0) {
-        await new Promise(resolve => setTimeout(resolve, interTokenDelay));
+        // Use longer delay after a rate limit hit
+        const delay = consecutiveRateLimits > 0 ? interTokenDelay * 3 : interTokenDelay;
+        await new Promise(resolve => setTimeout(resolve, delay));
       }
 
       try {
@@ -119,6 +128,7 @@ export class TokenTransferFetcher {
           addressesToWatch
         );
         purchases.push(...tokenPurchases);
+        consecutiveRateLimits = 0; // Reset on success
       } catch (err: any) {
         const msg = err.message || '';
         // Archive error = provider is behind, all subsequent tokens will also fail
@@ -126,10 +136,11 @@ export class TokenTransferFetcher {
           console.warn(`[TokenFetcher] Archive block error on ${chain.name} - provider is behind, skipping remaining tokens`);
           break; // Skip all remaining tokens for this chain
         }
-        // Rate limit exceeded = stop retrying for this chain
+        // Rate limit exceeded = skip this token, try next one with longer delay
         if (msg.includes('-32005') || msg.includes('limit exceeded')) {
-          console.warn(`[TokenFetcher] Rate limit exceeded on ${chain.name} - stopping token fetch`);
-          break;
+          consecutiveRateLimits++;
+          console.warn(`[TokenFetcher] Rate limit on ${tokenInfo.symbol} (${chain.name}) [${consecutiveRateLimits}/${tokensToFetch.length}] - skipping to next token`);
+          continue; // Try next token instead of stopping entirely
         }
         console.warn(`[TokenFetcher] Failed to fetch transfers for ${tokenInfo.symbol} (${tokenInfo.address}) on ${chain.name}: ${msg.substring(0, 100)}`);
       }
