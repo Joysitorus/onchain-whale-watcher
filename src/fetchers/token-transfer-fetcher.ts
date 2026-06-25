@@ -54,6 +54,13 @@ export class TokenTransferFetcher {
     return this.legacyProviders.get(chainId) || null;
   }
 
+  /**
+   * Validate Ethereum address format (0x + 40 hex chars)
+   */
+  private isValidEthAddress(address: string): boolean {
+    return /^0x[0-9a-fA-F]{40}$/.test(address);
+  }
+
   async fetchTokenTransfers(
     chain: ChainConfig,
     fromBlock: number,
@@ -66,7 +73,29 @@ export class TokenTransferFetcher {
     const purchases: WhaleTokenPurchase[] = [];
     const addressesToWatch = watchedAddresses?.map(a => a.toLowerCase()) || [];
 
-    for (const tokenInfo of this.tokenRegistry.getTokensByChain(chain.chainId)) {
+    // Get tokens for this chain
+    const chainTokens = this.tokenRegistry.getTokensByChain(chain.chainId);
+    
+    // P3 priority: Only fetch top tokens by importance to avoid RPC rate limits
+    // BSC PublicNode has strict eth_getLogs limits (-32005 "limit exceeded")
+    const MAX_TOKENS_PER_CHAIN: Record<number, number> = {
+      1: 50,    // Ethereum - large block range needs fewer tokens
+      56: 15,   // BSC - strict rate limits on public RPCs
+      137: 30,  // Polygon
+      42161: 30, // Arbitrum
+      43114: 20, // Avalanche
+      10: 20,   // Optimism
+    };
+    const maxTokens = MAX_TOKENS_PER_CHAIN[chain.chainId] || 20;
+    const tokensToFetch = chainTokens.slice(0, maxTokens);
+
+    for (const tokenInfo of tokensToFetch) {
+      // Validate address before making RPC call (prevents invalid address errors)
+      if (!this.isValidEthAddress(tokenInfo.address)) {
+        console.warn(`[TokenFetcher] Skipping invalid address for ${tokenInfo.symbol} on ${chain.name}: ${tokenInfo.address}`);
+        continue;
+      }
+
       try {
         const tokenPurchases = await this.fetchTokenTransfersForContract(
           chain,

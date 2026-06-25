@@ -74,17 +74,20 @@ export class RpcProviderManager {
     console.log('[RPC Provider] Chain-Key Distribution Strategy:');
     console.log('================================================');
     
-    for (let keyIndex = 0; keyIndex < infuraKeys.length; keyIndex++) {
-      const assignedChains: string[] = [];
-      
-      for (const [chainId] of this.pools) {
-        if (this.getInfuraKeyIndexForChain(chainId) === keyIndex) {
-          assignedChains.push(this.getChainName(chainId));
-        }
+    // Log key assignments based on getInfuraKeyIndexForChain
+    const keyAssignments: Record<number, string[]> = {};
+    for (const [chainId] of this.pools) {
+      const keyIndex = this.getInfuraKeyIndexForChain(chainId);
+      if (keyIndex >= 0) {
+        if (!keyAssignments[keyIndex]) keyAssignments[keyIndex] = [];
+        keyAssignments[keyIndex].push(this.getChainName(chainId));
       }
-      
-      if (assignedChains.length > 0) {
-        console.log(`  Infura Key ${keyIndex + 1}: ${assignedChains.join(', ')}`);
+    }
+    
+    for (let keyIndex = 0; keyIndex < infuraKeys.length; keyIndex++) {
+      const chains = keyAssignments[keyIndex] || [];
+      if (chains.length > 0) {
+        console.log(`  Infura Key ${keyIndex + 1}: ${chains.join(', ')}`);
       }
     }
     
@@ -199,9 +202,10 @@ export class RpcProviderManager {
    * Get the assigned Infura key index for a specific chain.
    * Each key handles only 2 chains to reduce burst requests:
    * - Key 1: Ethereum (1), Polygon (137)
-   * - Key 2: Optimism (10), Arbitrum (42161)
-   * - Key 3: Avalanche (43114)
+   * - Key 2: Arbitrum (42161), Avalanche (43114)
+   * - Key 3: Optimism (10)
    * 
+   * Note: Key 2 doesn't have Optimism access, so Optimism moved to Key 3.
    * Returns -1 if the chain doesn't use Infura (e.g., BSC).
    */
   private getInfuraKeyIndexForChain(chainId: number): number {
@@ -210,12 +214,13 @@ export class RpcProviderManager {
 
     // Chain-to-key assignment mapping
     // Each key handles 2 chains max to reduce burst
+    // Key 2 doesn't have Optimism network access, so Optimism uses Key 3
     const chainKeyMap: Record<number, number> = {
       1: 0,     // Ethereum → Key 1
       137: 0,   // Polygon → Key 1
-      10: 1,    // Optimism → Key 2
       42161: 1, // Arbitrum → Key 2
-      43114: 2, // Avalanche → Key 3
+      43114: 1, // Avalanche → Key 2
+      10: 2,    // Optimism → Key 3
     };
 
     return chainKeyMap[chainId] ?? -1;
@@ -302,29 +307,29 @@ export class RpcProviderManager {
   private getDefaultPublicRpcs(chainId: number): ProviderConfig[] {
     const publicRpcs: Record<number, ProviderConfig[]> = {
       1: [
-        { url: 'https://ethereum.publicnode.com', name: 'PublicNode-ETH', weight: 200 },
-        { url: 'https://public.1rpc.io/eth', name: '1RPC-ETH', weight: 201 },
-        { url: 'https://ethereum.public.blockpi.network/v1/rpc/public', name: 'BlockPI-ETH', weight: 202 },
+        { url: 'https://ethereum-rpc.publicnode.com', name: 'PublicNode-ETH', weight: 200 },
+        { url: 'https://1rpc.io/eth', name: '1RPC-ETH', weight: 201 },
+        { url: 'https://eth.drpc.org', name: 'Drpc-ETH', weight: 202 },
       ],
       56: [
-        { url: 'https://bsc.publicnode.com', name: 'PublicNode-BSC', weight: 200 },
-        { url: 'https://public.1rpc.io/bsc', name: '1RPC-BSC', weight: 201 },
+        { url: 'https://bsc-rpc.publicnode.com', name: 'PublicNode-BSC', weight: 200 },
+        { url: 'https://1rpc.io/bsc', name: '1RPC-BSC', weight: 201 },
       ],
       137: [
-        { url: 'https://polygon.publicnode.com', name: 'PublicNode-Polygon', weight: 200 },
-        { url: 'https://public.1rpc.io/matic', name: '1RPC-Polygon', weight: 201 },
+        { url: 'https://polygon-bor-rpc.publicnode.com', name: 'PublicNode-Polygon', weight: 200 },
+        { url: 'https://1rpc.io/matic', name: '1RPC-Polygon', weight: 201 },
       ],
       10: [
-        { url: 'https://optimism.publicnode.com', name: 'PublicNode-OP', weight: 200 },
-        { url: 'https://public.1rpc.io/op', name: '1RPC-OP', weight: 201 },
+        { url: 'https://optimism-rpc.publicnode.com', name: 'PublicNode-OP', weight: 200 },
+        { url: 'https://1rpc.io/op', name: '1RPC-OP', weight: 201 },
       ],
       42161: [
-        { url: 'https://arbitrum.publicnode.com', name: 'PublicNode-Arb', weight: 200 },
-        { url: 'https://public.1rpc.io/arb', name: '1RPC-Arb', weight: 201 },
+        { url: 'https://arbitrum-one-rpc.publicnode.com', name: 'PublicNode-Arb', weight: 200 },
+        { url: 'https://1rpc.io/arb', name: '1RPC-Arb', weight: 201 },
       ],
       43114: [
-        { url: 'https://avalanche.publicnode.com', name: 'PublicNode-AVAX', weight: 200 },
-        { url: 'https://public.1rpc.io/avax', name: '1RPC-AVAX', weight: 201 },
+        { url: 'https://avalanche-c-chain-rpc.publicnode.com', name: 'PublicNode-AVAX', weight: 200 },
+        { url: 'https://1rpc.io/avax/c-chain', name: '1RPC-AVAX', weight: 201 },
       ],
     };
     

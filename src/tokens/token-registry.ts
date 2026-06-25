@@ -79,23 +79,19 @@ const KNOWN_TOKENS: TokenInfo[] = [
   { address: '0x0cac67b1f59d174f8b6d8bf7a7e7a3e67b89c1d7', chainId: 1, name: 'Mina Protocol', symbol: 'MINA', decimals: 18, coingeckoId: 'mina-protocol' },
   { address: '0x6b3595068778dd592e39a122f4f5a5cf09c90fe2', chainId: 1, name: 'SushiToken', symbol: 'SUSHI', decimals: 18, coingeckoId: 'sushi' },
   { address: '0x3496b520e54f86b23723f2146f851687453c8e70', chainId: 1, name: 'Revest Finance', symbol: 'RVST', decimals: 18 },
-  { address: '0x66710378747027b1f40b9c4b8e4e4e4e4e4e4e4e', chainId: 1, name: 'Gitcoin', symbol: 'GTC', decimals: 18, coingeckoId: 'gitcoin' },
   
   // === DAO & Governance ===
   { address: '0x04fa0d235c4abf3bcfcbe27072ca7bd459c6964a', chainId: 1, name: 'UMA', symbol: 'UMA', decimals: 18, coingeckoId: 'uma' },
   { address: '0x6810e776880c0293344e76cb3b94bf367bc8817a', chainId: 1, name: 'Gnosis', symbol: 'GNO', decimals: 18, coingeckoId: 'gnosis' },
   { address: '0x4f9255c27e0a49218a54907c8d9cb1d8e56a7203', chainId: 1, name: 'Polkastarter', symbol: 'POLS', decimals: 18, coingeckoId: 'polkastarter' },
-  { address: '0xb2ed84a3935e59961b0adba3e0e5c9c5d40c8e34', chainId: 1, name: 'Forj', symbol: 'MVICE', decimals: 18 },
   
   // === Gaming & Metaverse ===
   { address: '0x3845badade8e6dff0498206808b86c74707b3f58', chainId: 1, name: 'The Sandbox', symbol: 'SAND', decimals: 18, coingeckoId: 'the-sandbox' },
   { address: '0x12970e6868f88f6557b76120662c1b3e50a646bf', chainId: 1, name: 'Axie Infinity', symbol: 'AXS', decimals: 18, coingeckoId: 'axie-infinity' },
-  { address: '0xd01ee6d0f503afef8a5d4d4d4d4d4d4d4d4d4d4d', chainId: 1, name: 'Illuvium', symbol: 'ILV', decimals: 18, coingeckoId: 'illuvium' },
   { address: '0x3212b29e33587a00fb1c83346f5dbfa69a458923', chainId: 1, name: 'Vulcan Forged', symbol: 'PYR', decimals: 18, coingeckoId: 'vulcan-forged' },
   
   // === Layer 2 & Scaling ===
   { address: '0x419d0d8bdd9af4e3f2da359b080014680c7009ea', chainId: 1, name: 'Near Protocol', symbol: 'NEAR', decimals: 18, coingeckoId: 'near' },
-  { address: '0x5a98fcbea516cf06857215779fd812ca3bef1b32', chainId: 1, name: 'Lido DAO', symbol: 'LDO', decimals: 18, coingeckoId: 'lido-dao' },
   
   // === AI & Data ===
   { address: '0x8a2279d4a90064dded7df9521d93acabf5c57127', chainId: 1, name: 'SingularityNET', symbol: 'AGIX', decimals: 18, coingeckoId: 'singularitynet' },
@@ -118,51 +114,28 @@ const KNOWN_TOKENS: TokenInfo[] = [
   
   // === Exchange Tokens ===
   { address: '0x57ab1ec28d129707052df4df61bc798c01e2b65c', chainId: 1, name: 'KuCoin Token', symbol: 'KCS', decimals: 18, coingeckoId: 'kucoin-shares' },
-  { address: '0x2c4f119bcf006648ba62d8b24f54ce12cd191d79', chainId: 1, name: 'FTX Token', symbol: 'FTT', decimals: 18, coingeckoId: 'ftx-token' },
-  { address: '0x24d52d0d4e27e1e0c3c17f5e5f8b9a3c7c7d7e7f', chainId: 1, name: 'Cronos', symbol: 'CRO', decimals: 18, coingeckoId: 'crypto-com-chain' },
   
   // === Layer 1 Competitors ===
-  { address: '0x7f1074823802d9c09c4c6f3a7e5e5f5f5f5f5f5f', chainId: 1, name: 'Solana', symbol: 'SOL', decimals: 18, coingeckoId: 'solana' },
   { address: '0x6f2595f7017f5dc3a86dd0dce88bcd4859cd749d', chainId: 1, name: 'Huobi Token', symbol: 'HT', decimals: 18, coingeckoId: 'huobi-token' },
   
   // === Misc Popular ===
   { address: '0x72379f1088040388b2c2b380a7288c31529d7e69', chainId: 1, name: 'Holo', symbol: 'HOT', decimals: 18, coingeckoId: 'holotoken' },
   { address: '0xd533a949740bb3306d119cc777fa900ba0e4c9a5', chainId: 1, name: 'Curve DAO Token', symbol: 'CRV', decimals: 18, coingeckoId: 'curve-dao-token' },
-  { address: '0x0d4a11d5eeaac28ec3f61d100daf4d40471f1852', chainId: 1, name: 'Fei Protocol', symbol: 'FEI', decimals: 18 },
-  { address: '0x82af49447d8a07e3bd95bd0d56f35241523fbab1', chainId: 1, name: 'WETH', symbol: 'WETH', decimals: 18, coingeckoId: 'weth' },
-  { address: '0x2a8f8e6e23e4ed5f32a66c5f1c5f5f5f5f5f5f5f', chainId: 1, name: 'Celsius', symbol: 'CEL', decimals: 18, coingeckoId: 'celsius-degree-token' },
   { address: '0x761d38e5ddf6ccf6bc32b46f2747d9c6eb47b84c', chainId: 1, name: 'HEX', symbol: 'HEX', decimals: 18, coingeckoId: 'hex' },
-  { address: '0x24fc0f4f4f4d5f5f5f5f5f5f5f5f5f5f5f5f5f5f', chainId: 1, name: 'Sweat Economy', symbol: 'SWEAT', decimals: 18, coingeckoId: 'sweat-economy' },
   
   // ============================================================
-  // BSC (chainId: 56) - Top 50+ tokens
+  // BSC (chainId: 56) - Top 15 tokens (reduced to avoid rate limits)
   // ============================================================
   { address: '0x55d398326f99059ff775485246999027b3197955', chainId: 56, name: 'Tether USD', symbol: 'USDT', decimals: 18, coingeckoId: 'tether' },
   { address: '0x8ac76a51cc950d9822d68b83fe1ad97b32cd580d', chainId: 56, name: 'USD Coin', symbol: 'USDC', decimals: 18, coingeckoId: 'usd-coin' },
   { address: '0x0e09fabb73bd3ade0a17ecc321fd13a19e81ce82', chainId: 56, name: 'PancakeSwap', symbol: 'CAKE', decimals: 18, coingeckoId: 'pancakeswap-token' },
+  { address: '0x7130d2a12b9bcbfee29384f2600056832b6c350', chainId: 56, name: 'Binance Coin', symbol: 'BNB', decimals: 18, coingeckoId: 'binancecoin' },
+  { address: '0x1af3f329e8be154074d8769d1ffa4ee058b1b3b4', chainId: 56, name: 'Dai Stablecoin', symbol: 'DAI', decimals: 18, coingeckoId: 'dai' },
   { address: '0x3ee2200e23fc490f32157f0976be6ed4bc9b56aa', chainId: 56, name: 'Binance USD', symbol: 'BUSD', decimals: 18, coingeckoId: 'binance-usd' },
   { address: '0x7083609fce4d1d8dc0c97908d9208cf8f97010c5', chainId: 56, name: 'Polkadot', symbol: 'DOT', decimals: 18, coingeckoId: 'polkadot' },
-  { address: '0xbf5140a2257316be06a03d13c462f7a66c6c855e', chainId: 56, name: 'Ankr', symbol: 'ANKR', decimals: 18, coingeckoId: 'ankr' },
-  { address: '0xe9e7cea3dedca5984780bafc599bd69add087d56', chainId: 56, name: 'Binance USD', symbol: 'BUSD', decimals: 18, coingeckoId: 'binance-usd' },
-  { address: '0x334b3ecb4d633788f98e148b40f95e5115268234', chainId: 56, name: 'Liquid Staking BNB', symbol: 'ankrBNB', decimals: 18 },
-  { address: '0x7130d2a12b9bcbfee29384f2600056832b6c350', chainId: 56, name: 'Binance Coin', symbol: 'BNB', decimals: 18, coingeckoId: 'binancecoin' },
-  { address: '0x0d9374897b3f6b7b3f6b7b3f6b7b3f6b7b3f6b7b', chainId: 56, name: 'BakeryToken', symbol: 'BAKE', decimals: 18, coingeckoId: 'bakerytoken' },
-  { address: '0x1af3f329e8be154074d8769d1ffa4ee058b1b3b4', chainId: 56, name: 'Dai Stablecoin', symbol: 'DAI', decimals: 18, coingeckoId: 'dai' },
-  { address: '0x23396cf899ca06c4472205fc943b42290f581c23', chainId: 56, name: 'Wrapped UST', symbol: 'UST', decimals: 18, coingeckoId: 'terrausd' },
-  { address: '0x14018efa42d69fb7d38882919438e29d7264af9f', chainId: 56, name: 'Mdex', symbol: 'MDX', decimals: 18, coingeckoId: 'mdex' },
-  { address: '0x8f00bb51333210b2e4d37d5e3dc1a0c32c6b5552', chainId: 56, name: 'BinaryX', symbol: 'BNX', decimals: 18, coingeckoId: 'binaryx' },
-  { address: '0x545e83066c65e3f46e28b7e1f6c24e65a7652076', chainId: 56, name: 'Klayswap', symbol: 'KSP', decimals: 18 },
-  { address: '0x7c17c8bad8d7b7c6b0e1e1e1e1e1e1e1e1e1e1e1', chainId: 56, name: 'Venus', symbol: 'XVS', decimals: 18, coingeckoId: 'venus' },
-  { address: '0x0eb3a704fcf42d324ce8b4a100a43a13b7b8939f', chainId: 56, name: 'Cafecoin', symbol: 'CAF', decimals: 18 },
-  { address: '0x92690c171d5c9a3b568c1c42f0b05f5f5f5f5f5f', chainId: 56, name: 'Gala', symbol: 'GALA', decimals: 18, coingeckoId: 'gala' },
-  { address: '0x203cdc8528e37d66c6b7b3f6b7b3f6b7b3f6b7b3', chainId: 56, name: 'Mobox', symbol: 'MBOX', decimals: 18, coingeckoId: 'mobox' },
   { address: '0x8d11ec38a3eb5e956b052f67da8bdc9bef8abf3e', chainId: 56, name: 'Dai Stablecoin', symbol: 'DAI', decimals: 18, coingeckoId: 'dai' },
-  { address: '0x475bfaa1851d901080c55853bf9e61e22d26c163', chainId: 56, name: 'Pancake Bunny', symbol: 'BUNNY', decimals: 18, coingeckoId: 'pancake-bunny' },
   { address: '0xf8a0bf9cf54b935565a49c58387ae2d71393f241', chainId: 56, name: 'Dodo', symbol: 'DODO', decimals: 18, coingeckoId: 'dodo' },
-  { address: '0xb39c525a43c1dce4ed41464c98d8a3c5a7477755', chainId: 56, name: 'Wombat Exchange', symbol: 'WOM', decimals: 18 },
-  { address: '0xf302d9e4b31b686f78d3a6b6b6b6b6b6b6b6b6b6', chainId: 56, name: 'Alpaca Finance', symbol: 'ALPACA', decimals: 18, coingeckoId: 'alpaca-finance' },
-  { address: '0x7f3b3f4f8c4e6b3f6b7b3f6b7b3f6b7b3f6b7b3f', chainId: 56, name: 'Biswap', symbol: 'BSW', decimals: 18, coingeckoId: 'biswap' },
-  { address: '0x3f6bb539a309c40a2a54f41c3b3f6b7b3f6b7b3f', chainId: 56, name: 'Starlink', symbol: 'STARL', decimals: 18 },
+  { address: '0x475bfaa1851d901080c55853bf9e61e22d26c163', chainId: 56, name: 'Pancake Bunny', symbol: 'BUNNY', decimals: 18, coingeckoId: 'pancake-bunny' },
   
   // ============================================================
   // POLYGON (chainId: 137) - Top 30+ tokens
@@ -175,12 +148,10 @@ const KNOWN_TOKENS: TokenInfo[] = [
   { address: '0x0d500b1d8e8ef31e21c99d1db9a6444d3adf1270', chainId: 137, name: 'Wrapped Matic', symbol: 'WMATIC', decimals: 18, coingeckoId: 'wmatic' },
   { address: '0x9a71012b13ca4d3d0cdc72aface7fc9f491e6634', chainId: 137, name: 'Balancer', symbol: 'BAL', decimals: 18, coingeckoId: 'balancer' },
   { address: '0x0b913a76beff3887e2ed8f49908ba7eb1578a53d', chainId: 137, name: 'Cometh', symbol: 'MUST', decimals: 18 },
-  { address: '0xd2b974b4c3b7c8f2c8f3f6b7b3f6b7b3f6b7b3f6', chainId: 137, name: 'QuickSwap', symbol: 'QUICK', decimals: 18, coingeckoId: 'quickswap' },
   { address: '0x580a443234bf12d2e31b46960885cc5cf94b87eb', chainId: 137, name: 'Dinoswap', symbol: 'DINO', decimals: 18 },
-  { address: '0x30d17d8b6e9c163d42a3f0b1f3f6b7b3f6b7b3f6', chainId: 137, name: 'Aavegotchi', symbol: 'GHST', decimals: 18, coingeckoId: 'aavegotchi' },
   
   // ============================================================
-  // ARBITRUM (chainId: 42161) - Top 30+ tokens
+  // ARBITRUM (chainId: 42161) - Top 10 tokens (only real addresses)
   // ============================================================
   { address: '0xfd086bc7cd5c481dcc9c85ebe478a1c0b69fcbb9', chainId: 42161, name: 'Tether USD', symbol: 'USDT', decimals: 6, coingeckoId: 'tether' },
   { address: '0xaf88d065e77c8cc2239327c5edb3a432268e5831', chainId: 42161, name: 'USD Coin', symbol: 'USDC', decimals: 6, coingeckoId: 'usd-coin' },
@@ -188,42 +159,29 @@ const KNOWN_TOKENS: TokenInfo[] = [
   { address: '0x2f2a2543b76a4166549f7aab2e75bef0aefc5b0f', chainId: 42161, name: 'Wrapped BTC', symbol: 'WBTC', decimals: 8, coingeckoId: 'wrapped-bitcoin' },
   { address: '0x82af49447d8a07e3bd95bd0d56f35241523fbab1', chainId: 42161, name: 'WETH', symbol: 'WETH', decimals: 18, coingeckoId: 'weth' },
   { address: '0xfc5a1a6eb076a2c7ad06ed22c90d7e710e35ad0a', chainId: 42161, name: 'GMX', symbol: 'GMX', decimals: 18, coingeckoId: 'gmx' },
-  { address: '0xd4d42f0b689d5d74050842f791ef45cdb5c02e16', chainId: 42161, name: 'Sperax USD', symbol: 'USDs', decimals: 18 },
   { address: '0x354a6da3fcde098f8389cad84b0182725c6c91de', chainId: 42161, name: 'Synapse', symbol: 'SYN', decimals: 18, coingeckoId: 'synapse' },
   { address: '0x5979d7b546e38e9db6eb8f9a6f93c14f5c4e93f7', chainId: 42161, name: 'WOO Network', symbol: 'WOO', decimals: 18, coingeckoId: 'woo-network' },
-  { address: '0x95fb1105ab8b073d7b3f6b7b3f6b7b3f6b7b3f6b', chainId: 42161, name: 'Dopex', symbol: 'DPX', decimals: 18, coingeckoId: 'dopex' },
-  { address: '0x6c2c06794b0e4863a2c52c1c4b1b3f6b7b3f6b7b', chainId: 42161, name: 'Camelot Token', symbol: 'GRAIL', decimals: 18, coingeckoId: 'camelot-token' },
-  { address: '0x539bd0d75b5c5f6b7b3f6b7b3f6b7b3f6b7b3f6b', chainId: 42161, name: 'Radiant Capital', symbol: 'RDNT', decimals: 18, coingeckoId: 'radiant-capital' },
   
   // ============================================================
-  // AVALANCHE (chainId: 43114) - Top 20+ tokens
+  // AVALANCHE (chainId: 43114) - Top 5 tokens (only real addresses)
   // ============================================================
   { address: '0x9702230a8ea53601f5cd2dc00fdbc13d4df4a8c7', chainId: 43114, name: 'Tether USD', symbol: 'USDT', decimals: 6, coingeckoId: 'tether' },
   { address: '0xb97ef9ef8734c71904d8002f8b6bc66dd9c48a6e', chainId: 43114, name: 'USD Coin', symbol: 'USDC', decimals: 6, coingeckoId: 'usd-coin' },
   { address: '0x50b7545627a5162f82a992c33b87adc2def0e449', chainId: 43114, name: 'Wrapped AVAX', symbol: 'WAVAX', decimals: 18, coingeckoId: 'wrapped-avax' },
   { address: '0xb31f66aa3c1e785363f0875a1b74e27b85fd66c7', chainId: 43114, name: 'Avalanche', symbol: 'AVAX', decimals: 18, coingeckoId: 'avalanche-2' },
   { address: '0x8e81fbae0e26b89726af8a92a37986de71764d41', chainId: 43114, name: 'Pangolin', symbol: 'PNG', decimals: 18, coingeckoId: 'pangolin' },
-  { address: '0x60781c2586d68229fde479221b26f7d0cb3d69db', chainId: 43114, name: 'Betswap', symbol: 'BSGG', decimals: 18 },
-  { address: '0xc7b1d05d40c8f3f5f5f5f5f5f5f5f5f5f5f5f5f5', chainId: 43114, name: 'BenQi', symbol: 'QI', decimals: 18, coingeckoId: 'benqi' },
-  { address: '0x48f0d264b05d4dc43c7f5f5f5f5f5f5f5f5f5f5f', chainId: 43114, name: 'Platypus Finance', symbol: 'PTP', decimals: 18, coingeckoId: 'platypus-finance' },
-  { address: '0x5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f', chainId: 43114, name: 'Trader Joe', symbol: 'JOE', decimals: 18, coingeckoId: 'joe' },
-  { address: '0xc710931ab023fb3faf750d1e5f5f5f5f5f5f5f5f', chainId: 43114, name: 'RealT Token', symbol: 'REG', decimals: 18 },
   
   // ============================================================
-  // OPTIMISM (chainId: 10) - Top 20+ tokens
+  // OPTIMISM (chainId: 10) - Top 10 tokens (only real addresses)
   // ============================================================
   { address: '0x94b008aa00579c1307b0ef2c499ad98a8ce58e58', chainId: 10, name: 'Tether USD', symbol: 'USDT', decimals: 6, coingeckoId: 'tether' },
   { address: '0x7f5c764cbc14f9669b88837ca1490cca17c31607', chainId: 10, name: 'USD Coin', symbol: 'USDC', decimals: 6, coingeckoId: 'usd-coin' },
   { address: '0x4200000000000000000000000000000000000006', chainId: 10, name: 'WETH', symbol: 'WETH', decimals: 18, coingeckoId: 'weth' },
   { address: '0x68f180fcce6836688e9084f035309e29bf0a2095', chainId: 10, name: 'Wrapped BTC', symbol: 'WBTC', decimals: 8, coingeckoId: 'wrapped-bitcoin' },
   { address: '0x4200000000000000000000000000000000000042', chainId: 10, name: 'Optimism', symbol: 'OP', decimals: 18, coingeckoId: 'optimism' },
-  { address: '0x9e1028f5f1d5ede59748ffcee48d3f2da90f56c2', chainId: 10, name: 'Synthetix', symbol: 'SNX', decimals: 18, coingeckoId: 'havven' },
   { address: '0x8700daec35af8ff88c16bdf0418774cb3d7599b4', chainId: 10, name: 'Synthetix', symbol: 'SNX', decimals: 18, coingeckoId: 'havven' },
   { address: '0x1f9840a85d5af5bf1d1762f925bdaddc4201f984', chainId: 10, name: 'Uniswap', symbol: 'UNI', decimals: 18, coingeckoId: 'uniswap' },
   { address: '0x3ea9f0c58483ca63c56d4e5ed530fd876fa405f1', chainId: 10, name: 'Kwenta', symbol: 'KWENTA', decimals: 18 },
-  { address: '0xd40197d30586a7575f21cb060cf9fc7409f3f5f5', chainId: 10, name: 'Velodrome', symbol: 'VELO', decimals: 18, coingeckoId: 'velodrome-finance' },
-  { address: '0x9e5f18fa4840f3f5f5f5f5f5f5f5f5f5f5f5f5f5', chainId: 10, name: 'Beethoven X', symbol: 'BEETS', decimals: 18 },
-  { address: '0x3c84e3f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5', chainId: 10, name: 'Thales', symbol: 'THALES', decimals: 18, coingeckoId: 'thales' },
 ];
 
 // Transfer event topic0
@@ -233,14 +191,31 @@ export class TokenRegistry {
   private tokens: Map<string, TokenInfo> = new Map();
   private fetchingContracts: Set<string> = new Set();
 
+  /**
+   * Validate Ethereum address format (0x + 40 hex chars)
+   */
+  private isValidEthAddress(address: string): boolean {
+    return /^0x[0-9a-fA-F]{40}$/.test(address);
+  }
+
   constructor(rpcUrls: Map<number, string>) {
     // Providers are now managed by rpcProviderManager (StableJsonRpcProvider)
     // No need to create raw ethers.JsonRpcProvider instances
 
-    // Load known tokens
+    // Load known tokens (with address validation)
+    let skippedCount = 0;
     for (const token of KNOWN_TOKENS) {
+      if (!this.isValidEthAddress(token.address)) {
+        console.warn(`[TokenRegistry] Skipping invalid address for ${token.symbol} on chain ${token.chainId}: ${token.address}`);
+        skippedCount++;
+        continue;
+      }
       const key = this.getKey(token.address, token.chainId);
       this.tokens.set(key, token);
+    }
+
+    if (skippedCount > 0) {
+      console.warn(`[TokenRegistry] Skipped ${skippedCount} tokens with invalid addresses`);
     }
 
     // Load custom tokens from environment
