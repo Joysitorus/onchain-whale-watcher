@@ -302,29 +302,29 @@ export class RpcProviderManager {
   private getDefaultPublicRpcs(chainId: number): ProviderConfig[] {
     const publicRpcs: Record<number, ProviderConfig[]> = {
       1: [
-        { url: 'https://rpc.ankr.com/eth', name: 'Ankr-ETH', weight: 200 },
-        { url: 'https://eth.llamarpc.com', name: 'LlamaRPC-ETH', weight: 201 },
-        { url: 'https://cloudflare-eth.com', name: 'Cloudflare-ETH', weight: 202 },
+        { url: 'https://ethereum.publicnode.com', name: 'PublicNode-ETH', weight: 200 },
+        { url: 'https://public.1rpc.io/eth', name: '1RPC-ETH', weight: 201 },
+        { url: 'https://ethereum.public.blockpi.network/v1/rpc/public', name: 'BlockPI-ETH', weight: 202 },
       ],
       56: [
-        { url: 'https://bsc-dataseed.binance.org/', name: 'Binance-BSC', weight: 200 },
-        { url: 'https://rpc.ankr.com/bsc', name: 'Ankr-BSC', weight: 201 },
+        { url: 'https://bsc.publicnode.com', name: 'PublicNode-BSC', weight: 200 },
+        { url: 'https://public.1rpc.io/bsc', name: '1RPC-BSC', weight: 201 },
       ],
       137: [
-        { url: 'https://polygon-rpc.com', name: 'Polygon-RPC', weight: 200 },
-        { url: 'https://rpc.ankr.com/polygon', name: 'Ankr-Polygon', weight: 201 },
+        { url: 'https://polygon.publicnode.com', name: 'PublicNode-Polygon', weight: 200 },
+        { url: 'https://public.1rpc.io/matic', name: '1RPC-Polygon', weight: 201 },
       ],
       10: [
-        { url: 'https://mainnet.optimism.io', name: 'OP-Foundation', weight: 200 },
-        { url: 'https://rpc.ankr.com/optimism', name: 'Ankr-OP', weight: 201 },
+        { url: 'https://optimism.publicnode.com', name: 'PublicNode-OP', weight: 200 },
+        { url: 'https://public.1rpc.io/op', name: '1RPC-OP', weight: 201 },
       ],
       42161: [
-        { url: 'https://arb1.arbitrum.io/rpc', name: 'Arbitrum-One', weight: 200 },
-        { url: 'https://rpc.ankr.com/arbitrum', name: 'Ankr-Arb', weight: 201 },
+        { url: 'https://arbitrum.publicnode.com', name: 'PublicNode-Arb', weight: 200 },
+        { url: 'https://public.1rpc.io/arb', name: '1RPC-Arb', weight: 201 },
       ],
       43114: [
-        { url: 'https://api.avax.network/ext/bc/C/rpc', name: 'Avalanche-C', weight: 200 },
-        { url: 'https://rpc.ankr.com/avalanche', name: 'Ankr-AVAX', weight: 201 },
+        { url: 'https://avalanche.publicnode.com', name: 'PublicNode-AVAX', weight: 200 },
+        { url: 'https://public.1rpc.io/avax', name: '1RPC-AVAX', weight: 201 },
       ],
     };
     
@@ -383,6 +383,11 @@ export class RpcProviderManager {
           console.warn(`[WS Provider] Skipping invalid BSC WS URL from env (Infura does not support BSC): ${key}`);
           return null;
         }
+        // Skip placeholder values (e.g., "BSC_WS_URL" instead of actual URL)
+        if (url === key || url.startsWith('wss://') === false) {
+          console.warn(`[WS Provider] Skipping placeholder WS URL: ${key}=${url}`);
+          return null;
+        }
         return url;
       }
     }
@@ -402,14 +407,12 @@ export class RpcProviderManager {
   }
 
   private getDefaultPublicWsUrls(chainId: number): WsProviderConfig[] {
-    // Public WebSocket endpoints (only known working ones)
+    // Public WebSocket endpoints (reliable free providers)
     const publicWs: Record<number, WsProviderConfig[]> = {
       1: [
-        { url: 'wss://eth.llamarpc.com', name: 'LlamaRPC-WS-ETH', weight: 200 },
-        { url: 'wss://rpc.ankr.com/eth/ws', name: 'Ankr-WS-ETH', weight: 201 },
+        { url: 'wss://ethereum-rpc.publicnode.com', name: 'PublicNode-WS-ETH', weight: 200 },
       ],
       56: [
-        // BSC public WebSocket endpoints (Nariox is dead)
         { url: 'wss://bsc-rpc.publicnode.com', name: 'PublicNode-WS-BSC', weight: 200 },
       ],
       137: [
@@ -421,7 +424,9 @@ export class RpcProviderManager {
       42161: [
         { url: 'wss://arbitrum-one-rpc.publicnode.com', name: 'PublicNode-WS-Arb', weight: 200 },
       ],
-      43114: [],
+      43114: [
+        { url: 'wss://avalanche-c-chain-rpc.publicnode.com', name: 'PublicNode-WS-AVAX', weight: 200 },
+      ],
     };
     return publicWs[chainId] || [];
   }
@@ -638,6 +643,19 @@ export class RpcProviderManager {
     }
   }
 
+  reportAuthError(chainId: number, providerUrl: string): void {
+    const pool = this.pools.get(chainId);
+    if (!pool) return;
+
+    const health = pool.health.get(providerUrl);
+    if (!health) return;
+
+    // Auth error means this provider won't work - apply very long cooldown
+    health.failCount = RpcProviderManager.MAX_FAILURES_BEFORE_COOLDOWN;
+    health.cooldownUntil = Date.now() + 24 * 60 * 60 * 1000; // 24 hours
+    console.error(`[RPC Provider] Auth error on ${health.name} (${chainId}) - provider disabled for 24h (check API key access)`);
+  }
+
   isRateLimitError(error: any): boolean {
     const message = error?.message?.toLowerCase() || '';
     return (
@@ -647,6 +665,15 @@ export class RpcProviderManager {
       message.includes('daily request limit') ||
       message.includes('credits') ||
       message.includes('quota exceeded')
+    );
+  }
+
+  isAuthError(error: any): boolean {
+    const message = error?.message?.toLowerCase() || '';
+    return (
+      message.includes('401') ||
+      message.includes('unauthorized') ||
+      message.includes('project id does not have access')
     );
   }
 

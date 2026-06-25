@@ -105,7 +105,12 @@ export class RpcFetcher {
     } catch (err: any) {
       if (this.useProviderManager && provider) {
         const isRateLimit = rpcProviderManager.isRateLimitError(err);
-        rpcProviderManager.reportFailure(chain.chainId, provider._getConnection().url, isRateLimit);
+        const isAuthError = rpcProviderManager.isAuthError(err);
+        if (isAuthError) {
+          rpcProviderManager.reportAuthError(chain.chainId, provider._getConnection().url);
+        } else {
+          rpcProviderManager.reportFailure(chain.chainId, provider._getConnection().url, isRateLimit);
+        }
       }
       
       console.warn(`[RPC] Error fetching blocks for ${chain.name}: ${err.message}`);
@@ -168,7 +173,12 @@ export class RpcFetcher {
       // Report failure
       if (this.useProviderManager && provider) {
         const isRateLimit = rpcProviderManager.isRateLimitError(err);
-        rpcProviderManager.reportFailure(chain.chainId, provider._getConnection().url, isRateLimit);
+        const isAuthError = rpcProviderManager.isAuthError(err);
+        if (isAuthError) {
+          rpcProviderManager.reportAuthError(chain.chainId, provider._getConnection().url);
+        } else {
+          rpcProviderManager.reportFailure(chain.chainId, provider._getConnection().url, isRateLimit);
+        }
       }
       
       return [];
@@ -238,7 +248,12 @@ export class RpcFetcher {
     } catch (err: any) {
       if (this.useProviderManager && provider) {
         const isRateLimit = rpcProviderManager.isRateLimitError(err);
-        rpcProviderManager.reportFailure(chain.chainId, provider._getConnection().url, isRateLimit);
+        const isAuthError = rpcProviderManager.isAuthError(err);
+        if (isAuthError) {
+          rpcProviderManager.reportAuthError(chain.chainId, provider._getConnection().url);
+        } else {
+          rpcProviderManager.reportFailure(chain.chainId, provider._getConnection().url, isRateLimit);
+        }
       }
       
       console.warn(`[RPC] Error fetching history for ${address}: ${err.message}`);
@@ -268,7 +283,12 @@ export class RpcFetcher {
       // Report failure
       if (this.useProviderManager && provider) {
         const isRateLimit = rpcProviderManager.isRateLimitError(err);
-        rpcProviderManager.reportFailure(chain.chainId, provider._getConnection().url, isRateLimit);
+        const isAuthError = rpcProviderManager.isAuthError(err);
+        if (isAuthError) {
+          rpcProviderManager.reportAuthError(chain.chainId, provider._getConnection().url);
+        } else {
+          rpcProviderManager.reportFailure(chain.chainId, provider._getConnection().url, isRateLimit);
+        }
       }
       
       return null;

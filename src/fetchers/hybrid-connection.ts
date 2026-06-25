@@ -423,7 +423,12 @@ export class HybridConnectionManager extends EventEmitter {
         // Report failure to provider manager
         if (this.useProviderManager && provider) {
           const isRateLimit = rpcProviderManager.isRateLimitError(err);
-          rpcProviderManager.reportFailure(chain.chainId, provider._getConnection().url, isRateLimit);
+          const isAuthError = rpcProviderManager.isAuthError(err);
+          if (isAuthError) {
+            rpcProviderManager.reportAuthError(chain.chainId, provider._getConnection().url);
+          } else {
+            rpcProviderManager.reportFailure(chain.chainId, provider._getConnection().url, isRateLimit);
+          }
         }
 
         console.warn(`[Poll] Error on ${chain.name}: ${err.message?.substring(0, 100)}`);

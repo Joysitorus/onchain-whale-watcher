@@ -26,7 +26,7 @@ const KNOWN_TOKENS: TokenInfo[] = [
   { address: '0xdac17f958d2ee523a2206206994597c13d831ec7', chainId: 1, name: 'Tether USD', symbol: 'USDT', decimals: 6, coingeckoId: 'tether' },
   { address: '0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48', chainId: 1, name: 'USD Coin', symbol: 'USDC', decimals: 6, coingeckoId: 'usd-coin' },
   { address: '0x6b175474e89094c44da98b954eedeac495271d0f', chainId: 1, name: 'Dai Stablecoin', symbol: 'DAI', decimals: 18, coingeckoId: 'dai' },
-  { address: '0x4fabb145d64652a948d72533008d24f1f551440', chainId: 1, name: 'Binance USD', symbol: 'BUSD', decimals: 18, coingeckoId: 'binance-usd' },
+  { address: '0x4fabb145d64652a948d72533008d24f1f5514404', chainId: 1, name: 'Binance USD', symbol: 'BUSD', decimals: 18, coingeckoId: 'binance-usd' },
   { address: '0x853d955acef822db058eb8505911ed77f175b99e', chainId: 1, name: 'Frax', symbol: 'FRAX', decimals: 18, coingeckoId: 'frax' },
   { address: '0x956f47ef553930f96ef778f0314540401bce0ed4', chainId: 1, name: 'Fei USD', symbol: 'FEI', decimals: 18, coingeckoId: 'fei-usd' },
   { address: '0xbc6ca0b83707c354f0a7ceec67bcff166c58c231', chainId: 1, name: 'LUSD Stability Pool', symbol: 'LUSD', decimals: 18, coingeckoId: 'liquity-usd' },
