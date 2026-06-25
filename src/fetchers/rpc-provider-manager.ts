@@ -382,15 +382,13 @@ export class RpcProviderManager {
     for (const key of keys) {
       const url = process.env[key];
       if (url) {
-        // Skip invalid WS URLs: Infura does NOT support BSC
-        // If env var points to an Infura BSC endpoint, skip it (it will return 429/404)
-        if (chainId === 56 && url.includes('infura.io')) {
-          console.warn(`[WS Provider] Skipping invalid BSC WS URL from env (Infura does not support BSC): ${key}`);
+        // Skip placeholder values (not actual URLs)
+        if (url === key || !url.startsWith('wss://')) {
           return null;
         }
-        // Skip placeholder values (e.g., "BSC_WS_URL" instead of actual URL)
-        if (url === key || url.startsWith('wss://') === false) {
-          console.warn(`[WS Provider] Skipping placeholder WS URL: ${key}=${url}`);
+        // Skip BSC WS: PublicNode BSC WS sends UNEXPECTED_MESSAGE, use polling only
+        if (chainId === 56) {
+          console.log(`[WS Provider] BSC WS disabled (PublicNode BSC WS incompatible), using polling`);
           return null;
         }
         return url;
@@ -413,13 +411,12 @@ export class RpcProviderManager {
 
   private getDefaultPublicWsUrls(chainId: number): WsProviderConfig[] {
     // Public WebSocket endpoints (reliable free providers)
+    // BSC WS disabled: PublicNode BSC WS sends UNEXPECTED_MESSAGE errors
     const publicWs: Record<number, WsProviderConfig[]> = {
       1: [
         { url: 'wss://ethereum-rpc.publicnode.com', name: 'PublicNode-WS-ETH', weight: 200 },
       ],
-      56: [
-        { url: 'wss://bsc-rpc.publicnode.com', name: 'PublicNode-WS-BSC', weight: 200 },
-      ],
+      56: [], // BSC WS disabled - use polling only
       137: [
         { url: 'wss://polygon-bor-rpc.publicnode.com', name: 'PublicNode-WS-Polygon', weight: 200 },
       ],

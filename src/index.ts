@@ -200,8 +200,8 @@ async function main() {
         const fetchTimer = metrics.txFetchDuration.startTimer({ chain_id: chain.chainId.toString() });
         
         let tokenPurchases = cacheService
-          ? await cacheService.getOrSet(cacheKey, () => tokenTransferFetcher.fetchRecentPurchases(chain, 100), 30000)
-          : await tokenTransferFetcher.fetchRecentPurchases(chain, 100);
+          ? await cacheService.getOrSet(cacheKey, () => tokenTransferFetcher.fetchRecentPurchases(chain, 50), 30000)
+          : await tokenTransferFetcher.fetchRecentPurchases(chain, 50);
         
         fetchTimer();
         

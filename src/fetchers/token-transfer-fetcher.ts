@@ -77,14 +77,14 @@ export class TokenTransferFetcher {
     const chainTokens = this.tokenRegistry.getTokensByChain(chain.chainId);
     
     // P3 priority: Only fetch top tokens by importance to avoid RPC rate limits
-    // BSC PublicNode has strict eth_getLogs limits (-32005 "limit exceeded")
+    // PublicNode has strict eth_getLogs limits AND archive block restrictions
     const MAX_TOKENS_PER_CHAIN: Record<number, number> = {
-      1: 50,    // Ethereum - large block range needs fewer tokens
-      56: 10,   // BSC - very strict rate limits on PublicNode (-32005 "limit exceeded")
-      137: 25,  // Polygon - PublicNode strict limits
-      42161: 25, // Arbitrum
-      43114: 15, // Avalanche - PublicNode strict limits
-      10: 20,   // Optimism
+      1: 25,    // Ethereum - Infura primary, but reduce to avoid timeouts
+      56: 5,    // BSC - very strict rate limits on PublicNode (-32005)
+      137: 15,  // Polygon - PublicNode archive limits
+      42161: 15, // Arbitrum - PublicNode archive limits
+      43114: 10, // Avalanche - PublicNode archive limits
+      10: 15,   // Optimism - PublicNode archive limits
     };
     const maxTokens = MAX_TOKENS_PER_CHAIN[chain.chainId] || 20;
     const tokensToFetch = chainTokens.slice(0, maxTokens);
@@ -106,8 +106,18 @@ export class TokenTransferFetcher {
         );
         purchases.push(...tokenPurchases);
       } catch (err: any) {
-        // Log failed token fetches for debugging
-        console.warn(`[TokenFetcher] Failed to fetch transfers for ${tokenInfo.symbol} (${tokenInfo.address}) on ${chain.name}: ${err.message}`);
+        const msg = err.message || '';
+        // Archive error = provider is behind, all subsequent tokens will also fail
+        if (msg.includes('Archive requests') || msg.includes('403 Forbidden')) {
+          console.warn(`[TokenFetcher] Archive block error on ${chain.name} - provider is behind, skipping remaining tokens`);
+          break; // Skip all remaining tokens for this chain
+        }
+        // Rate limit exceeded = stop retrying for this chain
+        if (msg.includes('-32005') || msg.includes('limit exceeded')) {
+          console.warn(`[TokenFetcher] Rate limit exceeded on ${chain.name} - stopping token fetch`);
+          break;
+        }
+        console.warn(`[TokenFetcher] Failed to fetch transfers for ${tokenInfo.symbol} (${tokenInfo.address}) on ${chain.name}: ${msg.substring(0, 100)}`);
       }
     }
 
@@ -182,7 +192,16 @@ export class TokenTransferFetcher {
       }
 
       if (lastError) {
-        console.warn(`[TokenFetcher] Failed to fetch chunk ${start}-${end} for ${tokenInfo.symbol} on ${chain.name}: ${lastError.message?.substring(0, 100)}`);
+        const msg = lastError.message?.substring(0, 150) || '';
+        console.warn(`[TokenFetcher] Failed to fetch chunk ${start}-${end} for ${tokenInfo.symbol} on ${chain.name}: ${msg}`);
+        
+        // Throw critical errors up to caller for chain-level skipping
+        if (msg.includes('Archive requests') || msg.includes('403 Forbidden')) {
+          throw lastError;
+        }
+        if (msg.includes('-32005') || msg.includes('limit exceeded')) {
+          throw lastError;
+        }
       }
     }
 
@@ -309,7 +328,16 @@ export class TokenTransferFetcher {
     const provider = await this.getProvider(chain.chainId);
     if (!provider) return [];
 
-    const latestBlock = await provider.getBlockNumber();
+    // Get latest block from the SAME provider that will be used for eth_getLogs
+    // This prevents archive errors when Infura returns latest but PublicNode is behind
+    let latestBlock: number;
+    try {
+      latestBlock = await provider.getBlockNumber();
+    } catch (err: any) {
+      console.warn(`[TokenFetcher] Failed to get block number for ${chain.name}: ${err.message?.substring(0, 80)}`);
+      return [];
+    }
+
     const fromBlock = latestBlock - blocksBack;
     const cacheKey = chain.chainId;
     const cachedFrom = this.fetchBlockCache.get(cacheKey) || 0;
@@ -319,6 +347,15 @@ export class TokenTransferFetcher {
 
     this.fetchBlockCache.set(chain.chainId, latestBlock);
 
-    return this.fetchTokenTransfers(chain, actualFrom, latestBlock);
+    try {
+      return await this.fetchTokenTransfers(chain, actualFrom, latestBlock);
+    } catch (err: any) {
+      // Archive or rate limit error = provider is behind, skip this chain this cycle
+      const msg = err.message || '';
+      if (msg.includes('Archive requests') || msg.includes('-32005') || msg.includes('limit exceeded')) {
+        console.warn(`[TokenFetcher] Skipping ${chain.name} this cycle: ${msg.substring(0, 80)}`);
+      }
+      return [];
+    }
   }
 }

@@ -15,14 +15,22 @@ export class ArkhamScraper {
   }
 
   private async fetchPage(path: string): Promise<string> {
+    // Skip if too many errors (bot protection detected)
+    if (this.errorCount >= 3) {
+      return '';
+    }
+
     try {
       this.requestCount++;
       const startTime = Date.now();
       const { data, status } = await axios.get(`${this.baseUrl}${path}`, {
         headers: {
-          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-          'Accept': 'text/html,application/json',
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+          'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
           'Accept-Language': 'en-US,en;q=0.9',
+          'Accept-Encoding': 'gzip, deflate, br',
+          'Connection': 'keep-alive',
+          'Cache-Control': 'max-age=0',
           'Cookie': this.sessionCookies,
         },
         timeout: 15000,
@@ -33,6 +41,14 @@ export class ArkhamScraper {
     } catch (err: any) {
       this.errorCount++;
       const status = err.response?.status || 'unknown';
+      
+      // On 403 (Cloudflare/bot protection), disable scraper permanently
+      if (status === 403) {
+        console.warn(`[Arkham] Bot protection detected (403) - disabling scraper (errors: ${this.errorCount}/${this.requestCount})`);
+        this.errorCount = 999; // Prevent further attempts
+        return '';
+      }
+      
       console.warn(`[Arkham] Failed to fetch ${path}: ${err.message} (status: ${status}, errors: ${this.errorCount}/${this.requestCount})`);
       return '';
     }
