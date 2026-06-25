@@ -74,21 +74,18 @@ export class TokenTransferFetcher {
     const purchases: WhaleTokenPurchase[] = [];
     const addressesToWatch = watchedAddresses?.map(a => a.toLowerCase()) || [];
 
-    // Get tokens for this chain
-    const chainTokens = this.tokenRegistry.getTokensByChain(chain.chainId);
-    
-    // P3 priority: Only fetch top tokens by importance to avoid RPC rate limits
-    // PublicNode has strict eth_getLogs limits AND archive block restrictions
-    const MAX_TOKENS_PER_CHAIN: Record<number, number> = {
-      1: 25,    // Ethereum - Infura primary, but reduce to avoid timeouts
-      56: 5,    // BSC - very strict rate limits on PublicNode (-32005)
-      137: 15,  // Polygon - PublicNode archive limits
-      42161: 15, // Arbitrum - PublicNode archive limits
-      43114: 10, // Avalanche - PublicNode archive limits
-      10: 15,   // Optimism - PublicNode archive limits
+    // Get tokens for this chain using ROTATION (scan different subset each cycle)
+    // This ensures ALL tokens get tracked over multiple cycles, not just the first N
+    const TOKENS_PER_BATCH: Record<number, number> = {
+      1: 15,    // Ethereum: 15 per batch (50 total ÷ 4 batches ≈ 4 cycles)
+      56: 5,    // BSC: 5 per batch (25 total ÷ 5 batches = 5 cycles)
+      137: 8,   // Polygon: 8 per batch
+      42161: 8, // Arbitrum: 8 per batch
+      43114: 5, // Avalanche: 5 per batch
+      10: 8,    // Optimism: 8 per batch
     };
-    const maxTokens = MAX_TOKENS_PER_CHAIN[chain.chainId] || 20;
-    const tokensToFetch = chainTokens.slice(0, maxTokens);
+    const batchSize = TOKENS_PER_BATCH[chain.chainId] || 10;
+    const tokensToFetch = this.tokenRegistry.getTokensForRotation(chain.chainId, batchSize);
 
     // BSC needs delays between token fetches to avoid -32005 rate limits on PublicNode
     const INTER_TOKEN_DELAY_MS: Record<number, number> = {
